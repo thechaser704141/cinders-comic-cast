@@ -9,7 +9,84 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      feed_metadata: {
+        Row: {
+          created_at: string
+          description: string | null
+          feed_url: string
+          id: string
+          last_updated: string | null
+          title: string
+          total_items: number | null
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          feed_url: string
+          id?: string
+          last_updated?: string | null
+          title: string
+          total_items?: number | null
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          feed_url?: string
+          id?: string
+          last_updated?: string | null
+          title?: string
+          total_items?: number | null
+        }
+        Relationships: []
+      }
+      rss_items: {
+        Row: {
+          author: string | null
+          chapters: string | null
+          created_at: string
+          description: string | null
+          fandom: string | null
+          id: string
+          link: string
+          published_date: string | null
+          rating: string | null
+          tags: string[] | null
+          title: string
+          updated_at: string
+          word_count: number | null
+        }
+        Insert: {
+          author?: string | null
+          chapters?: string | null
+          created_at?: string
+          description?: string | null
+          fandom?: string | null
+          id?: string
+          link: string
+          published_date?: string | null
+          rating?: string | null
+          tags?: string[] | null
+          title: string
+          updated_at?: string
+          word_count?: number | null
+        }
+        Update: {
+          author?: string | null
+          chapters?: string | null
+          created_at?: string
+          description?: string | null
+          fandom?: string | null
+          id?: string
+          link?: string
+          published_date?: string | null
+          rating?: string | null
+          tags?: string[] | null
+          title?: string
+          updated_at?: string
+          word_count?: number | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
