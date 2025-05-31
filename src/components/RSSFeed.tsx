@@ -4,11 +4,12 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { RSSFeedItem } from "./RSSFeedItem";
 import { Button } from "@/components/ui/button";
-import { Loader2, RefreshCw, AlertCircle } from "lucide-react";
+import { Loader2, RefreshCw, AlertCircle, Clock } from "lucide-react";
 import { toast } from "sonner";
 
 export const RSSFeed = () => {
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastAutoRefresh, setLastAutoRefresh] = useState<Date | null>(null);
 
   const { data: feedItems, isLoading, error, refetch } = useQuery({
     queryKey: ['rss-feed'],
@@ -21,6 +22,8 @@ export const RSSFeed = () => {
       if (error) throw error;
       return data;
     },
+    staleTime: 1000 * 60 * 60, // Consider data stale after 1 hour
+    refetchInterval: 1000 * 60 * 60 * 3, // Auto-refetch every 3 hours
   });
 
   const { data: feedMetadata } = useQuery({
@@ -39,28 +42,60 @@ export const RSSFeed = () => {
   const refreshFeed = async () => {
     setIsRefreshing(true);
     try {
+      console.log('Starting feed refresh...');
       const { data, error } = await supabase.functions.invoke('fetch-ao3-feed');
       
-      if (error) throw error;
+      if (error) {
+        console.error('Supabase function error:', error);
+        throw error;
+      }
       
       console.log('Refresh response:', data);
       
-      toast.success(data?.message || "Successfully refreshed the RSS feed");
-      
-      refetch();
+      if (data?.success) {
+        toast.success(`${data.message || "Successfully refreshed the RSS feed"}`);
+        setLastAutoRefresh(new Date());
+        refetch();
+      } else {
+        throw new Error(data?.error || 'Unknown error occurred');
+      }
     } catch (error) {
       console.error('Error refreshing feed:', error);
-      toast.error("Failed to refresh the feed. Please try again.");
+      toast.error(`Failed to refresh the feed: ${error.message || 'Please try again.'}`);
     } finally {
       setIsRefreshing(false);
     }
   };
 
+  // Auto-refresh on component mount if no data or data is old
   useEffect(() => {
-    // Auto-refresh feed on component mount if no data exists
-    if (!feedItems || feedItems.length === 0) {
+    const shouldAutoRefresh = () => {
+      if (!feedItems || feedItems.length === 0) return true;
+      
+      if (feedMetadata?.last_updated) {
+        const lastUpdate = new Date(feedMetadata.last_updated);
+        const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
+        return lastUpdate < threeHoursAgo;
+      }
+      
+      return false;
+    };
+
+    if (shouldAutoRefresh()) {
+      console.log('Auto-refreshing feed...');
       refreshFeed();
     }
+  }, [feedMetadata]);
+
+  // Set up auto-refresh every 3 hours
+  useEffect(() => {
+    const interval = setInterval(() => {
+      console.log('Auto-refresh triggered');
+      setLastAutoRefresh(new Date());
+      refreshFeed();
+    }, 3 * 60 * 60 * 1000); // 3 hours
+
+    return () => clearInterval(interval);
   }, []);
 
   if (error) {
@@ -77,6 +112,15 @@ export const RSSFeed = () => {
     );
   }
 
+  const formatAutoRefreshTime = () => {
+    if (!lastAutoRefresh && !feedMetadata?.last_updated) return 'Never';
+    
+    const date = lastAutoRefresh || (feedMetadata?.last_updated ? new Date(feedMetadata.last_updated) : null);
+    if (!date) return 'Never';
+    
+    return date.toLocaleString();
+  };
+
   return (
     <div className="max-w-4xl mx-auto p-6">
       <div className="flex items-center justify-between mb-8">
@@ -87,11 +131,15 @@ export const RSSFeed = () => {
           <p className="text-gray-600">
             {feedMetadata?.description || 'Latest fanfiction works for Cinderella Boy by Punko'}
           </p>
-          {feedMetadata?.last_updated && (
-            <p className="text-sm text-gray-500 mt-1">
-              Last updated: {new Date(feedMetadata.last_updated).toLocaleString()}
-            </p>
-          )}
+          <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
+            {feedMetadata?.last_updated && (
+              <span>Last updated: {new Date(feedMetadata.last_updated).toLocaleString()}</span>
+            )}
+            <div className="flex items-center gap-1">
+              <Clock className="h-4 w-4" />
+              <span>Auto-refresh: every 3 hours</span>
+            </div>
+          </div>
         </div>
         
         <Button 

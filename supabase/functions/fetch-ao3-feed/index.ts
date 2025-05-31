@@ -22,24 +22,61 @@ serve(async (req) => {
     const ao3Url = 'https://archiveofourown.org/tags/Cinderella%20Boy%20-%20Punko%20(Webcomic)/works';
     
     console.log('Fetching AO3 page...');
-    const response = await fetch(ao3Url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; RSS Feed Bot/1.0)'
+    
+    // Add retry logic and better headers
+    let response;
+    let retries = 3;
+    
+    while (retries > 0) {
+      try {
+        response = await fetch(ao3Url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+          },
+          signal: AbortSignal.timeout(30000) // 30 second timeout
+        });
+        
+        if (response.ok) break;
+        
+        console.log(`Attempt failed with status ${response.status}, retries left: ${retries - 1}`);
+        retries--;
+        
+        if (retries > 0) {
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
+        }
+      } catch (error) {
+        console.log(`Fetch error: ${error.message}, retries left: ${retries - 1}`);
+        retries--;
+        if (retries > 0) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } else {
+          throw error;
+        }
       }
-    });
+    }
 
-    if (!response.ok) {
-      throw new Error(`Failed to fetch AO3 page: ${response.status}`);
+    if (!response || !response.ok) {
+      throw new Error(`Failed to fetch AO3 page after retries: ${response?.status || 'unknown'}`);
     }
 
     const html = await response.text();
-    console.log('HTML fetched, parsing works...');
+    console.log(`HTML fetched successfully, length: ${html.length}`);
 
     // Parse the HTML to extract work information
     const works = parseAO3Works(html);
     console.log(`Parsed ${works.length} works`);
 
-    // Store or update feed metadata
+    if (works.length === 0) {
+      console.log('No works found, HTML structure might have changed');
+      console.log('Sample HTML snippet:', html.substring(0, 1000));
+    }
+
+    // Store or update feed metadata with upsert to handle duplicates
     const { error: metadataError } = await supabaseClient
       .from('feed_metadata')
       .upsert({
@@ -48,28 +85,44 @@ serve(async (req) => {
         description: 'Latest fanfiction works for Cinderella Boy by Punko',
         last_updated: new Date().toISOString(),
         total_items: works.length
-      });
+      }, { onConflict: 'feed_url' });
 
     if (metadataError) {
       console.error('Error updating metadata:', metadataError);
     }
 
-    // Store new works in database
+    // Store new works in database with better error handling
+    let successCount = 0;
+    let errorCount = 0;
+    
     for (const work of works) {
-      const { error } = await supabaseClient
-        .from('rss_items')
-        .upsert(work, { onConflict: 'link' });
-      
-      if (error) {
-        console.error('Error inserting work:', error);
+      try {
+        const { error } = await supabaseClient
+          .from('rss_items')
+          .upsert(work, { onConflict: 'link' });
+        
+        if (error) {
+          console.error('Error inserting work:', error);
+          errorCount++;
+        } else {
+          successCount++;
+        }
+      } catch (err) {
+        console.error('Exception inserting work:', err);
+        errorCount++;
       }
     }
+
+    console.log(`Successfully stored ${successCount} works, ${errorCount} errors`);
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: `Successfully processed ${works.length} works`,
-        works: works 
+        message: `Successfully processed ${works.length} works (${successCount} stored, ${errorCount} errors)`,
+        works: works,
+        total_found: works.length,
+        stored: successCount,
+        errors: errorCount
       }),
       { 
         headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
@@ -94,76 +147,125 @@ serve(async (req) => {
 function parseAO3Works(html: string) {
   const works = [];
   
-  // Updated regex to match AO3's current HTML structure
-  const workRegex = /<li[^>]*class="work blurb group"[^>]*>([\s\S]*?)<\/li>/g;
-  let match;
+  // More flexible regex patterns to catch different HTML structures
+  const workPatterns = [
+    /<li[^>]*class="work blurb group"[^>]*>([\s\S]*?)<\/li>/g,
+    /<li[^>]*class="[^"]*work[^"]*"[^>]*>([\s\S]*?)<\/li>/g,
+    /<article[^>]*class="[^"]*work[^"]*"[^>]*>([\s\S]*?)<\/article>/g
+  ];
 
-  while ((match = workRegex.exec(html)) !== null) {
-    try {
-      const workHtml = match[1];
-      const work = parseWorkItem(workHtml);
-      if (work) {
-        works.push(work);
+  for (const pattern of workPatterns) {
+    let match;
+    while ((match = pattern.exec(html)) !== null) {
+      try {
+        const workHtml = match[1];
+        const work = parseWorkItem(workHtml);
+        if (work && !works.find(w => w.link === work.link)) {
+          works.push(work);
+        }
+      } catch (error) {
+        console.error('Error parsing work item:', error);
       }
-    } catch (error) {
-      console.error('Error parsing work item:', error);
     }
+    
+    if (works.length > 0) break; // If we found works with this pattern, use them
   }
 
   return works;
 }
 
 function parseWorkItem(workHtml: string) {
-  // Extract title and link - updated pattern
-  const titleMatch = workHtml.match(/<h4[^>]*class="heading"[^>]*>[\s\S]*?<a[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/);
-  if (!titleMatch) return null;
+  // Multiple patterns for title and link extraction
+  const titlePatterns = [
+    /<h4[^>]*class="heading"[^>]*>[\s\S]*?<a[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/,
+    /<h3[^>]*class="heading"[^>]*>[\s\S]*?<a[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/,
+    /<a[^>]*href="(\/works\/[^"]*)"[^>]*>([^<]*)<\/a>/
+  ];
 
-  const link = `https://archiveofourown.org${titleMatch[1]}`;
-  const title = titleMatch[2].trim();
-
-  // Extract author - updated pattern
-  const authorMatch = workHtml.match(/<a[^>]*rel="author"[^>]*>([^<]*)<\/a>/);
-  const author = authorMatch ? authorMatch[1].trim() : 'Unknown';
-
-  // Extract summary/description - updated pattern
-  const summaryMatch = workHtml.match(/<blockquote[^>]*class="userstuff summary"[^>]*>([\s\S]*?)<\/blockquote>/);
-  let description = '';
-  if (summaryMatch) {
-    description = summaryMatch[1]
-      .replace(/<[^>]*>/g, '') // Remove HTML tags
-      .replace(/\s+/g, ' ') // Normalize whitespace
-      .trim();
+  let titleMatch = null;
+  for (const pattern of titlePatterns) {
+    titleMatch = workHtml.match(pattern);
+    if (titleMatch) break;
   }
 
-  // Extract tags - updated pattern
-  const tagMatches = workHtml.match(/<a[^>]*class="tag"[^>]*>([^<]*)<\/a>/g);
-  const tags = tagMatches ? tagMatches.map(tag => {
+  if (!titleMatch) {
+    console.log('No title match found in work HTML snippet:', workHtml.substring(0, 200));
+    return null;
+  }
+
+  const link = titleMatch[1].startsWith('http') ? titleMatch[1] : `https://archiveofourown.org${titleMatch[1]}`;
+  const title = titleMatch[2].trim();
+
+  // Extract author with multiple patterns
+  const authorPatterns = [
+    /<a[^>]*rel="author"[^>]*>([^<]*)<\/a>/,
+    /<a[^>]*href="\/users\/[^"]*"[^>]*>([^<]*)<\/a>/
+  ];
+  
+  let author = 'Unknown';
+  for (const pattern of authorPatterns) {
+    const authorMatch = workHtml.match(pattern);
+    if (authorMatch) {
+      author = authorMatch[1].trim();
+      break;
+    }
+  }
+
+  // Extract summary/description with multiple patterns
+  const summaryPatterns = [
+    /<blockquote[^>]*class="userstuff summary"[^>]*>([\s\S]*?)<\/blockquote>/,
+    /<blockquote[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/blockquote>/,
+    /<div[^>]*class="summary"[^>]*>([\s\S]*?)<\/div>/
+  ];
+  
+  let description = '';
+  for (const pattern of summaryPatterns) {
+    const summaryMatch = workHtml.match(pattern);
+    if (summaryMatch) {
+      description = summaryMatch[1]
+        .replace(/<[^>]*>/g, '') // Remove HTML tags
+        .replace(/\s+/g, ' ') // Normalize whitespace
+        .trim();
+      break;
+    }
+  }
+
+  // Extract tags with better pattern
+  const tagMatches = workHtml.match(/<a[^>]*class="tag"[^>]*>([^<]*)<\/a>/g) || [];
+  const tags = tagMatches.map(tag => {
     const tagMatch = tag.match(/>([^<]*)</);
     return tagMatch ? tagMatch[1].trim() : '';
-  }).filter(tag => tag.length > 0) : [];
+  }).filter(tag => tag.length > 0);
 
-  // Extract word count - updated pattern
+  // Extract metadata with improved patterns
   const wordCountMatch = workHtml.match(/(\d+(?:,\d+)*)\s*words/i);
   const word_count = wordCountMatch ? parseInt(wordCountMatch[1].replace(/,/g, '')) : null;
 
-  // Extract chapters - updated pattern
   const chaptersMatch = workHtml.match(/(\d+(?:\/\d+)?)\s*chapters/i);
   const chapters = chaptersMatch ? chaptersMatch[1] : null;
 
-  // Extract rating - updated pattern
   const ratingMatch = workHtml.match(/<span[^>]*class="rating[^"]*"[^>]*title="([^"]*)">/);
   const rating = ratingMatch ? ratingMatch[1] : null;
 
-  // Extract date - updated pattern
-  const dateMatch = workHtml.match(/<p[^>]*class="datetime"[^>]*>([^<]*)<\/p>/);
+  // Extract date with multiple patterns
+  const datePatterns = [
+    /<p[^>]*class="datetime"[^>]*>([^<]*)<\/p>/,
+    /<span[^>]*class="datetime"[^>]*>([^<]*)<\/span>/,
+    /(\d{1,2}\s+\w+\s+\d{4})/
+  ];
+  
   let published_date = null;
-  if (dateMatch) {
-    const dateText = dateMatch[1].trim();
-    published_date = parseRelativeDate(dateText);
+  for (const pattern of datePatterns) {
+    const dateMatch = workHtml.match(pattern);
+    if (dateMatch) {
+      const dateText = dateMatch[1].trim();
+      published_date = parseDate(dateText);
+      if (published_date) break;
+    }
   }
 
   // Generate a unique ID based on the work URL
-  const workId = titleMatch[1].replace(/\D/g, ''); // Extract work ID from URL
+  const workId = link.match(/\/works\/(\d+)/)?.[1] || Date.now().toString();
 
   return {
     id: workId,
@@ -180,9 +282,10 @@ function parseWorkItem(workHtml: string) {
   };
 }
 
-function parseRelativeDate(dateText: string): string | null {
+function parseDate(dateText: string): string | null {
   const now = new Date();
   
+  // Handle relative dates
   if (dateText.includes('day ago')) {
     const days = parseInt(dateText.match(/(\d+)/)?.[1] || '1');
     return new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString();
@@ -195,6 +298,16 @@ function parseRelativeDate(dateText: string): string | null {
   } else if (dateText.includes('year ago')) {
     const years = parseInt(dateText.match(/(\d+)/)?.[1] || '1');
     return new Date(now.getTime() - years * 365 * 24 * 60 * 60 * 1000).toISOString();
+  }
+  
+  // Try to parse absolute dates
+  try {
+    const parsed = new Date(dateText);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toISOString();
+    }
+  } catch (e) {
+    console.error('Error parsing date:', dateText, e);
   }
   
   return now.toISOString();
