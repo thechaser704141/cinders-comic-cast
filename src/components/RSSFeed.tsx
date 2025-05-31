@@ -5,10 +5,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { RSSFeedItem } from "./RSSFeedItem";
 import { Button } from "@/components/ui/button";
 import { Loader2, RefreshCw, AlertCircle } from "lucide-react";
-import { useToast } from "@/hooks/use-toast";
+import { toast } from "sonner";
 
 export const RSSFeed = () => {
-  const { toast } = useToast();
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const { data: feedItems, isLoading, error, refetch } = useQuery({
@@ -46,19 +45,12 @@ export const RSSFeed = () => {
       
       console.log('Refresh response:', data);
       
-      toast({
-        title: "Feed Updated",
-        description: data?.message || "Successfully refreshed the RSS feed",
-      });
+      toast.success(data?.message || "Successfully refreshed the RSS feed");
       
       refetch();
     } catch (error) {
       console.error('Error refreshing feed:', error);
-      toast({
-        title: "Error",
-        description: "Failed to refresh the feed. Please try again.",
-        variant: "destructive",
-      });
+      toast.error("Failed to refresh the feed. Please try again.");
     } finally {
       setIsRefreshing(false);
     }

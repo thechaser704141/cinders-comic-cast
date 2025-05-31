@@ -94,15 +94,14 @@ serve(async (req) => {
 function parseAO3Works(html: string) {
   const works = [];
   
-  // Use regex to extract work information from the HTML
-  const workRegex = /<li[^>]*class="work blurb group"[^>]*>(.*?)<\/li>/gs;
-  const matches = html.match(workRegex);
+  // Updated regex to match AO3's current HTML structure
+  const workRegex = /<li[^>]*class="work blurb group"[^>]*>([\s\S]*?)<\/li>/g;
+  let match;
 
-  if (!matches) return works;
-
-  for (const match of matches) {
+  while ((match = workRegex.exec(html)) !== null) {
     try {
-      const work = parseWorkItem(match);
+      const workHtml = match[1];
+      const work = parseWorkItem(workHtml);
       if (work) {
         works.push(work);
       }
@@ -115,47 +114,59 @@ function parseAO3Works(html: string) {
 }
 
 function parseWorkItem(workHtml: string) {
-  // Extract title and link
-  const titleMatch = workHtml.match(/<h4[^>]*class="heading"[^>]*>.*?<a[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/s);
+  // Extract title and link - updated pattern
+  const titleMatch = workHtml.match(/<h4[^>]*class="heading"[^>]*>[\s\S]*?<a[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/);
   if (!titleMatch) return null;
 
   const link = `https://archiveofourown.org${titleMatch[1]}`;
   const title = titleMatch[2].trim();
 
-  // Extract author
+  // Extract author - updated pattern
   const authorMatch = workHtml.match(/<a[^>]*rel="author"[^>]*>([^<]*)<\/a>/);
   const author = authorMatch ? authorMatch[1].trim() : 'Unknown';
 
-  // Extract summary/description
-  const summaryMatch = workHtml.match(/<blockquote[^>]*class="userstuff summary"[^>]*>(.*?)<\/blockquote>/s);
-  const description = summaryMatch ? summaryMatch[1].replace(/<[^>]*>/g, '').trim() : '';
+  // Extract summary/description - updated pattern
+  const summaryMatch = workHtml.match(/<blockquote[^>]*class="userstuff summary"[^>]*>([\s\S]*?)<\/blockquote>/);
+  let description = '';
+  if (summaryMatch) {
+    description = summaryMatch[1]
+      .replace(/<[^>]*>/g, '') // Remove HTML tags
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .trim();
+  }
 
-  // Extract tags
+  // Extract tags - updated pattern
   const tagMatches = workHtml.match(/<a[^>]*class="tag"[^>]*>([^<]*)<\/a>/g);
-  const tags = tagMatches ? tagMatches.map(tag => tag.replace(/<[^>]*>/g, '').trim()) : [];
+  const tags = tagMatches ? tagMatches.map(tag => {
+    const tagMatch = tag.match(/>([^<]*)</);
+    return tagMatch ? tagMatch[1].trim() : '';
+  }).filter(tag => tag.length > 0) : [];
 
-  // Extract word count
+  // Extract word count - updated pattern
   const wordCountMatch = workHtml.match(/(\d+(?:,\d+)*)\s*words/i);
   const word_count = wordCountMatch ? parseInt(wordCountMatch[1].replace(/,/g, '')) : null;
 
-  // Extract chapters
+  // Extract chapters - updated pattern
   const chaptersMatch = workHtml.match(/(\d+(?:\/\d+)?)\s*chapters/i);
   const chapters = chaptersMatch ? chaptersMatch[1] : null;
 
-  // Extract rating
+  // Extract rating - updated pattern
   const ratingMatch = workHtml.match(/<span[^>]*class="rating[^"]*"[^>]*title="([^"]*)">/);
   const rating = ratingMatch ? ratingMatch[1] : null;
 
-  // Extract date (this is tricky, AO3 shows relative dates)
+  // Extract date - updated pattern
   const dateMatch = workHtml.match(/<p[^>]*class="datetime"[^>]*>([^<]*)<\/p>/);
   let published_date = null;
   if (dateMatch) {
     const dateText = dateMatch[1].trim();
-    // Handle relative dates like "2 days ago", "1 week ago", etc.
     published_date = parseRelativeDate(dateText);
   }
 
+  // Generate a unique ID based on the work URL
+  const workId = titleMatch[1].replace(/\D/g, ''); // Extract work ID from URL
+
   return {
+    id: workId,
     title,
     description,
     link,
