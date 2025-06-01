@@ -23,7 +23,7 @@ serve(async (req) => {
     
     console.log('Fetching AO3 page...');
     
-    // Add retry logic and better headers
+    // More realistic browser headers to avoid detection
     let response;
     let retries = 3;
     
@@ -31,14 +31,23 @@ serve(async (req) => {
       try {
         response = await fetch(ao3Url, {
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
             'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1'
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+            'Sec-Ch-Ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+            'Sec-Ch-Ua-Mobile': '?0',
+            'Sec-Ch-Ua-Platform': '"macOS"',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1',
+            'Upgrade-Insecure-Requests': '1',
+            'Connection': 'keep-alive'
           },
-          signal: AbortSignal.timeout(30000) // 30 second timeout
+          signal: AbortSignal.timeout(45000) // 45 second timeout
         });
         
         if (response.ok) break;
@@ -47,13 +56,14 @@ serve(async (req) => {
         retries--;
         
         if (retries > 0) {
-          await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds before retry
+          // Exponential backoff
+          await new Promise(resolve => setTimeout(resolve, (4 - retries) * 5000));
         }
       } catch (error) {
         console.log(`Fetch error: ${error.message}, retries left: ${retries - 1}`);
         retries--;
         if (retries > 0) {
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await new Promise(resolve => setTimeout(resolve, (4 - retries) * 5000));
         } else {
           throw error;
         }
@@ -73,52 +83,93 @@ serve(async (req) => {
 
     if (works.length === 0) {
       console.log('No works found, HTML structure might have changed');
-      console.log('Sample HTML snippet:', html.substring(0, 1000));
+      console.log('Sample HTML snippet:', html.substring(0, 2000));
     }
 
-    // Store or update feed metadata with upsert to handle duplicates
+    // Store or update feed metadata - use INSERT with ON CONFLICT
     const { error: metadataError } = await supabaseClient
       .from('feed_metadata')
-      .upsert({
+      .insert({
         feed_url: ao3Url,
         title: 'Cinderella Boy - Punko (Webcomic) Works',
         description: 'Latest fanfiction works for Cinderella Boy by Punko',
         last_updated: new Date().toISOString(),
         total_items: works.length
-      }, { onConflict: 'feed_url' });
+      })
+      .onConflict('feed_url')
+      .update({
+        title: 'Cinderella Boy - Punko (Webcomic) Works',
+        description: 'Latest fanfiction works for Cinderella Boy by Punko',
+        last_updated: new Date().toISOString(),
+        total_items: works.length
+      });
 
     if (metadataError) {
       console.error('Error updating metadata:', metadataError);
     }
 
-    // Store new works in database with better error handling
+    // Store new works in database - check for existing works first
     let successCount = 0;
     let errorCount = 0;
     
     for (const work of works) {
       try {
-        const { error } = await supabaseClient
+        // First check if work exists
+        const { data: existingWork } = await supabaseClient
           .from('rss_items')
-          .upsert(work, { onConflict: 'link' });
-        
-        if (error) {
-          console.error('Error inserting work:', error);
-          errorCount++;
+          .select('id')
+          .eq('link', work.link)
+          .single();
+
+        if (existingWork) {
+          // Update existing work
+          const { error } = await supabaseClient
+            .from('rss_items')
+            .update({
+              title: work.title,
+              description: work.description,
+              author: work.author,
+              published_date: work.published_date,
+              tags: work.tags,
+              word_count: work.word_count,
+              chapters: work.chapters,
+              fandom: work.fandom,
+              rating: work.rating,
+              updated_at: new Date().toISOString()
+            })
+            .eq('link', work.link);
+          
+          if (error) {
+            console.error('Error updating work:', error);
+            errorCount++;
+          } else {
+            successCount++;
+          }
         } else {
-          successCount++;
+          // Insert new work
+          const { error } = await supabaseClient
+            .from('rss_items')
+            .insert(work);
+          
+          if (error) {
+            console.error('Error inserting work:', error);
+            errorCount++;
+          } else {
+            successCount++;
+          }
         }
       } catch (err) {
-        console.error('Exception inserting work:', err);
+        console.error('Exception processing work:', err);
         errorCount++;
       }
     }
 
-    console.log(`Successfully stored ${successCount} works, ${errorCount} errors`);
+    console.log(`Successfully processed ${successCount} works, ${errorCount} errors`);
 
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: `Successfully processed ${works.length} works (${successCount} stored, ${errorCount} errors)`,
+        message: `Successfully processed ${works.length} works (${successCount} stored/updated, ${errorCount} errors)`,
         works: works,
         total_found: works.length,
         stored: successCount,
@@ -147,16 +198,18 @@ serve(async (req) => {
 function parseAO3Works(html: string) {
   const works = [];
   
-  // More flexible regex patterns to catch different HTML structures
+  // Look for the work blurbs in different ways
   const workPatterns = [
     /<li[^>]*class="work blurb group"[^>]*>([\s\S]*?)<\/li>/g,
-    /<li[^>]*class="[^"]*work[^"]*"[^>]*>([\s\S]*?)<\/li>/g,
-    /<article[^>]*class="[^"]*work[^"]*"[^>]*>([\s\S]*?)<\/article>/g
+    /<li[^>]*class="[^"]*work[^"]*blurb[^"]*"[^>]*>([\s\S]*?)<\/li>/g,
+    /<article[^>]*class="[^"]*work[^"]*"[^>]*>([\s\S]*?)<\/article>/g,
+    /<div[^>]*class="work blurb group"[^>]*>([\s\S]*?)<\/div>/g
   ];
 
   for (const pattern of workPatterns) {
     let match;
-    while ((match = pattern.exec(html)) !== null) {
+    const regex = new RegExp(pattern);
+    while ((match = regex.exec(html)) !== null) {
       try {
         const workHtml = match[1];
         const work = parseWorkItem(workHtml);
@@ -169,6 +222,36 @@ function parseAO3Works(html: string) {
     }
     
     if (works.length > 0) break; // If we found works with this pattern, use them
+  }
+
+  // If no works found, try a more aggressive approach
+  if (works.length === 0) {
+    console.log('Trying alternative parsing method...');
+    const headingMatches = html.match(/<h4[^>]*class="heading"[^>]*>[\s\S]*?<a[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/g);
+    if (headingMatches) {
+      console.log(`Found ${headingMatches.length} heading matches`);
+      for (const match of headingMatches) {
+        const linkMatch = match.match(/href="([^"]*)"/);
+        const titleMatch = match.match(/>([^<]*)<\/a>/);
+        if (linkMatch && titleMatch) {
+          const link = linkMatch[1].startsWith('http') ? linkMatch[1] : `https://archiveofourown.org${linkMatch[1]}`;
+          const workId = link.match(/\/works\/(\d+)/)?.[1] || Date.now().toString();
+          works.push({
+            id: workId,
+            title: titleMatch[1].trim(),
+            description: '',
+            link: link,
+            author: 'Unknown',
+            published_date: new Date().toISOString(),
+            tags: [],
+            word_count: null,
+            chapters: null,
+            fandom: 'Cinderella Boy - Punko (Webcomic)',
+            rating: null
+          });
+        }
+      }
+    }
   }
 
   return works;
