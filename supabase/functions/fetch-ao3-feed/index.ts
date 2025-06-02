@@ -96,77 +96,88 @@ function parseIndividualWork(workHtml, workIndex) {
   const author = authorMatch ? authorMatch[1].trim() : null;
   console.log(`Author: ${author || 'Unknown'}`);
   
-  // Extract description from <blockquote class="userstuff summary">
+  // Extract description from <blockquote class="userstuff summary"> - EXACT structure
   let description = null;
   console.log('Searching for description...');
   
-  const descriptionRegex = /<blockquote[^>]*class="[^"]*userstuff[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/blockquote>/i;
-  const descriptionMatch = workHtml.match(descriptionRegex);
+  const blockquoteRegex = /<blockquote[^>]*class="[^"]*userstuff[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/blockquote>/i;
+  const blockquoteMatch = workHtml.match(blockquoteRegex);
   
-  if (descriptionMatch) {
-    console.log('Found description!');
-    description = descriptionMatch[1]
-      .replace(/<[^>]*>/g, '') // Remove HTML tags
+  if (blockquoteMatch) {
+    console.log('Found blockquote description section!');
+    let descContent = blockquoteMatch[1];
+    
+    // Remove all HTML tags but keep the text content, including from <p> tags
+    description = descContent
+      .replace(/<p[^>]*>/gi, ' ') // Replace opening p tags with space
+      .replace(/<\/p>/gi, ' ') // Replace closing p tags with space
+      .replace(/<br\s*\/?>/gi, ' ') // Replace br tags with space
+      .replace(/<[^>]*>/g, '') // Remove any remaining HTML tags
       .replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"')
       .replace(/&#39;/g, "'")
-      .replace(/\s+/g, ' ')
+      .replace(/\s+/g, ' ') // Collapse multiple spaces
       .trim();
     
-    if (description.length > 180) {
-      description = description.substring(0, 180) + '...';
+    if (description.length > 200) {
+      description = description.substring(0, 200) + '...';
     }
-    console.log(`Description: "${description}"`);
+    console.log(`Parsed description: "${description}"`);
   } else {
-    console.log('No description found');
+    console.log('No blockquote description found');
   }
   
-  // Extract tags from <ul class="tags commas"> - using the exact structure provided
+  // Extract tags from <ul class="tags commas"> - EXACT structure
   const tags = [];
   console.log('Searching for tags...');
   
-  const tagSectionRegex = /<ul[^>]*class="[^"]*tags[^"]*commas[^"]*"[^>]*>([\s\S]*?)<\/ul>/i;
-  const tagSectionMatch = workHtml.match(tagSectionRegex);
+  const tagsUlRegex = /<ul[^>]*class="[^"]*tags[^"]*commas[^"]*"[^>]*>([\s\S]*?)<\/ul>/i;
+  const tagsUlMatch = workHtml.match(tagsUlRegex);
   
-  if (tagSectionMatch) {
-    console.log('Found tags section!');
-    const tagSection = tagSectionMatch[1];
+  if (tagsUlMatch) {
+    console.log('Found tags ul section!');
+    const tagsSection = tagsUlMatch[1];
     
-    // Extract all <a class="tag"> elements
-    const tagRegex = /<a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]+)<\/a>/gi;
+    // Extract all <a class="tag"> elements within li elements
+    const tagLinkRegex = /<li[^>]*>[\s\S]*?<a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]+)<\/a>[\s\S]*?<\/li>/gi;
     let tagMatch;
     
-    while ((tagMatch = tagRegex.exec(tagSection)) !== null) {
-      const tag = tagMatch[1]
+    while ((tagMatch = tagLinkRegex.exec(tagsSection)) !== null) {
+      let tag = tagMatch[1]
         .replace(/&amp;/g, '&')
         .replace(/&lt;/g, '<')
         .replace(/&gt;/g, '>')
         .replace(/&quot;/g, '"')
         .replace(/&#39;/g, "'")
+        .replace(/\*/g, '/') // Handle encoded slashes
         .trim();
       
-      // Skip the main fandom tag since it's redundant
-      if (tag && tag !== 'Cinderella Boy - Punko (Webcomic)' && !tags.includes(tag)) {
+      // Skip certain tags and avoid duplicates
+      if (tag && 
+          tag !== 'Cinderella Boy - Punko (Webcomic)' && 
+          tag !== 'No Archive Warnings Apply' &&
+          !tags.includes(tag)) {
         tags.push(tag);
+        console.log(`Found tag: "${tag}"`);
       }
     }
-    console.log(`Found ${tags.length} tags: ${tags.slice(0, 5).join(', ')}${tags.length > 5 ? '...' : ''}`);
+    console.log(`Total tags found: ${tags.length}`);
   } else {
-    console.log('No tags section found');
+    console.log('No tags ul section found');
   }
   
-  // Extract date from <p class="datetime"> that comes after required-tags
+  // Extract date from <p class="datetime"> that comes after required-tags - EXACT structure
   let published_date = null;
   console.log('Searching for date...');
   
-  // Look for <p class="datetime"> specifically
-  const dateRegex = /<p[^>]*class="[^"]*datetime[^"]*"[^>]*>([^<]+)<\/p>/i;
-  const dateMatch = workHtml.match(dateRegex);
+  // Look specifically for <p class="datetime"> after required-tags
+  const requiredTagsRegex = /<ul[^>]*class="[^"]*required-tags[^"]*"[^>]*>[\s\S]*?<\/ul>[\s\S]*?<p[^>]*class="[^"]*datetime[^"]*"[^>]*>([^<]+)<\/p>/i;
+  const dateMatch = workHtml.match(requiredTagsRegex);
   
   if (dateMatch) {
-    console.log('Found date!');
+    console.log('Found datetime after required-tags!');
     const dateStr = dateMatch[1].trim();
     console.log(`Raw date string: "${dateStr}"`);
     try {
@@ -179,14 +190,32 @@ function parseIndividualWork(workHtml, workIndex) {
       console.log(`Date parsing error: ${e.message}`);
     }
   } else {
-    console.log('No date found');
+    // Fallback: look for any <p class="datetime">
+    const fallbackDateRegex = /<p[^>]*class="[^"]*datetime[^"]*"[^>]*>([^<]+)<\/p>/i;
+    const fallbackMatch = workHtml.match(fallbackDateRegex);
+    if (fallbackMatch) {
+      console.log('Found fallback datetime!');
+      const dateStr = fallbackMatch[1].trim();
+      console.log(`Fallback raw date string: "${dateStr}"`);
+      try {
+        const parsedDate = new Date(dateStr);
+        if (!isNaN(parsedDate.getTime())) {
+          published_date = parsedDate.toISOString();
+          console.log(`Fallback parsed date: ${published_date}`);
+        }
+      } catch (e) {
+        console.log(`Fallback date parsing error: ${e.message}`);
+      }
+    } else {
+      console.log('No datetime found');
+    }
   }
   
   // Extract stats (word count, chapters) - more flexible patterns
   let word_count = null;
   let chapters = null;
   
-  // Look for words in dd elements or spans
+  // Look for words in dd elements or stats
   const wordPatterns = [
     /<dd[^>]*class="[^"]*words[^"]*"[^>]*>([^<]+)<\/dd>/i,
     /<span[^>]*class="[^"]*words[^"]*"[^>]*>([^<]+)<\/span>/i,
@@ -244,10 +273,10 @@ function parseIndividualWork(workHtml, workIndex) {
     }
   }
   
-  // Log a sample of the HTML for debugging
+  // Log a sample of the HTML for debugging on first work only
   if (workIndex === 1) {
-    console.log('=== SAMPLE HTML (first 2000 chars) ===');
-    console.log(workHtml.substring(0, 2000));
+    console.log('=== SAMPLE HTML (first 3000 chars) ===');
+    console.log(workHtml.substring(0, 3000));
     console.log('=== END SAMPLE HTML ===');
   }
   
