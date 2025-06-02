@@ -227,40 +227,85 @@ function parseIndividualWork(workHtml, workIndex) {
   }
   console.log(`Tags found: ${tags.length} - ${tags.slice(0, 3).join(', ')}`);
   
-  // Extract published date - improved patterns based on AO3 structure
+  // Extract published date - comprehensive approach
   let published_date = null;
+  
+  // First, let's look for any datetime attributes in the HTML
+  console.log(`\n--- DATE EXTRACTION DEBUG FOR WORK ${workIndex} ---`);
+  
+  // Log any datetime attributes found
+  const datetimeMatches = workHtml.match(/datetime="[^"]+"/gi);
+  if (datetimeMatches) {
+    console.log(`Found datetime attributes: ${datetimeMatches.join(', ')}`);
+  } else {
+    console.log('No datetime attributes found');
+  }
+  
+  // Log any "Published" text found
+  const publishedMatches = workHtml.match(/Published[^<\n]+/gi);
+  if (publishedMatches) {
+    console.log(`Found "Published" text: ${publishedMatches.join(', ')}`);
+  } else {
+    console.log('No "Published" text found');
+  }
+  
+  // Log date-like patterns
   const datePatterns = [
-    // Pattern for AO3's datetime attribute in p class="datetime"
-    /<p[^>]*class="[^"]*datetime[^"]*"[^>]*>[\s\S]*?datetime="([^"]+)"/i,
-    // Pattern for datetime in any element
-    /datetime="([^"]+)"/i,
-    // Pattern for dd class="published"
-    /<dd[^>]*class="[^"]*published[^"]*"[^>]*>([^<]+)<\/dd>/i,
-    // Pattern for date in statistics
-    /<dt[^>]*>Published:<\/dt>\s*<dd[^>]*>([^<]+)<\/dd>/i,
-    // General date patterns
-    /Published:\s*([^<\n]+)/i,
-    /(\d{4}-\d{2}-\d{2})/i,
-    /(\d{1,2}\s+\w{3}\s+\d{4})/i
+    /\b\d{4}-\d{2}-\d{2}\b/g,
+    /\b\d{1,2}\s+\w{3,9}\s+\d{4}\b/g,
+    /\b\w{3,9}\s+\d{1,2},?\s+\d{4}\b/g
   ];
   
-  for (const pattern of datePatterns) {
+  datePatterns.forEach((pattern, index) => {
+    const matches = workHtml.match(pattern);
+    if (matches) {
+      console.log(`Date pattern ${index + 1} matches: ${matches.join(', ')}`);
+    }
+  });
+  
+  // Now try extraction patterns
+  const extractionPatterns = [
+    // AO3's standard datetime format
+    /datetime="([^"]+)"/i,
+    // Standard published date in statistics
+    /<dd[^>]*class="[^"]*published[^"]*"[^>]*>([^<]+)<\/dd>/i,
+    // Alternative published formats
+    /<dt[^>]*>\s*Published:\s*<\/dt>\s*<dd[^>]*>([^<]+)<\/dd>/i,
+    /Published:\s*([^<\n]+)/i,
+    // Generic date patterns
+    /(\d{4}-\d{2}-\d{2})/i,
+    /(\d{1,2}\s+\w{3,9}\s+\d{4})/i,
+    /(\w{3,9}\s+\d{1,2},?\s+\d{4})/i
+  ];
+  
+  for (let i = 0; i < extractionPatterns.length; i++) {
+    const pattern = extractionPatterns[i];
     const match = workHtml.match(pattern);
     if (match) {
       try {
         const dateStr = cleanHtmlText(match[1]);
-        console.log(`Trying to parse date: "${dateStr}"`);
+        console.log(`Pattern ${i + 1} found date string: "${dateStr}"`);
         const parsedDate = new Date(dateStr);
         if (!isNaN(parsedDate.getTime())) {
           published_date = parsedDate.toISOString();
-          console.log(`Date successfully parsed: ${published_date}`);
+          console.log(`Successfully parsed date: ${published_date}`);
           break;
+        } else {
+          console.log(`Failed to parse date: "${dateStr}"`);
         }
       } catch (e) {
-        console.log(`Date parsing failed for "${match[1]}": ${e.message}`);
+        console.log(`Date parsing exception for "${match[1]}": ${e.message}`);
       }
     }
   }
+  
+  if (!published_date) {
+    console.log('No valid published date found');
+    // Log a sample of the work HTML to see what we're working with
+    console.log(`Work HTML sample (chars 200-800): ${workHtml.substring(200, 800)}`);
+  }
+  
+  console.log(`--- END DATE EXTRACTION DEBUG ---\n`);
   
   // Extract word count
   let word_count = null;
