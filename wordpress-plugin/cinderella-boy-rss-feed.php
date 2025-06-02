@@ -1,4 +1,3 @@
-
 <?php
 /**
  * Plugin Name: Cinderella Boy RSS Feed
@@ -126,6 +125,58 @@ class CinderellaBoyRSSFeed {
                                 </div>
                             </div>
                             
+                            <?php if ($atts['show_tags'] === 'true'): ?>
+                                <div class="cb-item-tags-sections">
+                                    <?php 
+                                    $categorized = $this->categorize_tags($item);
+                                    
+                                    // Characters section
+                                    if (!empty($categorized['characters'])): ?>
+                                        <div class="cb-tag-section">
+                                            <span class="cb-section-label">👥 Characters:</span>
+                                            <?php 
+                                            $displayed_chars = array_slice($categorized['characters'], 0, 4);
+                                            foreach ($displayed_chars as $char): ?>
+                                                <span class="cb-tag"><?php echo esc_html($char); ?></span>
+                                            <?php endforeach;
+                                            if (count($categorized['characters']) > 4): ?>
+                                                <span class="cb-tag-more">+<?php echo count($categorized['characters']) - 4; ?> more</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php endif;
+                                    
+                                    // Relationships section
+                                    if (!empty($categorized['relationships'])): ?>
+                                        <div class="cb-tag-section">
+                                            <span class="cb-section-label">💕 Relationships:</span>
+                                            <?php 
+                                            $displayed_rels = array_slice($categorized['relationships'], 0, 4);
+                                            foreach ($displayed_rels as $rel): ?>
+                                                <span class="cb-tag"><?php echo esc_html($rel); ?></span>
+                                            <?php endforeach;
+                                            if (count($categorized['relationships']) > 4): ?>
+                                                <span class="cb-tag-more">+<?php echo count($categorized['relationships']) - 4; ?> more</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php endif;
+                                    
+                                    // Additional tags section
+                                    if (!empty($categorized['additional_tags'])): ?>
+                                        <div class="cb-tag-section">
+                                            <span class="cb-section-label">🏷️ Additional Tags:</span>
+                                            <?php 
+                                            $displayed_add = array_slice($categorized['additional_tags'], 0, 4);
+                                            foreach ($displayed_add as $tag): ?>
+                                                <span class="cb-tag"><?php echo esc_html($tag); ?></span>
+                                            <?php endforeach;
+                                            if (count($categorized['additional_tags']) > 4): ?>
+                                                <span class="cb-tag-more">+<?php echo count($categorized['additional_tags']) - 4; ?> more</span>
+                                            <?php endif; ?>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                            <?php endif; ?>
+                            
                             <?php if ($atts['show_description'] === 'true' && $item['description']): ?>
                                 <div class="cb-item-description">
                                     <?php echo esc_html(wp_trim_words($item['description'], 50)); ?>
@@ -140,22 +191,6 @@ class CinderellaBoyRSSFeed {
                                     <?php if ($item['chapters']): ?>
                                         <span class="cb-chapters"><?php echo esc_html($item['chapters']); ?> chapters</span>
                                     <?php endif; ?>
-                                </div>
-                            <?php endif; ?>
-                            
-                            <?php if ($atts['show_tags'] === 'true' && $item['tags']): ?>
-                                <div class="cb-item-tags">
-                                    <?php 
-                                    $tags = is_string($item['tags']) ? json_decode($item['tags'], true) : $item['tags'];
-                                    if (is_array($tags)):
-                                        $displayed_tags = array_slice($tags, 0, 5);
-                                        foreach ($displayed_tags as $tag): ?>
-                                            <span class="cb-tag"><?php echo esc_html($tag); ?></span>
-                                        <?php endforeach;
-                                        if (count($tags) > 5): ?>
-                                            <span class="cb-tag-more">+<?php echo count($tags) - 5; ?> more</span>
-                                        <?php endif;
-                                    endif; ?>
                                 </div>
                             <?php endif; ?>
                         </div>
@@ -190,6 +225,59 @@ class CinderellaBoyRSSFeed {
         </div>
         <?php
         return ob_get_clean();
+    }
+    
+    private function categorize_tags($item) {
+        // If we have the new categorized columns and they have data, use them
+        if ((isset($item['characters']) && !empty($item['characters'])) || 
+            (isset($item['relationships']) && !empty($item['relationships'])) || 
+            (isset($item['additional_tags']) && !empty($item['additional_tags']))) {
+            return array(
+                'characters' => $item['characters'] ?? array(),
+                'relationships' => $item['relationships'] ?? array(),
+                'additional_tags' => $item['additional_tags'] ?? array()
+            );
+        }
+
+        // Fall back to categorizing the old tags array
+        $tags = isset($item['tags']) ? $item['tags'] : array();
+        if (is_string($tags)) {
+            $tags = json_decode($tags, true);
+        }
+        if (!is_array($tags)) {
+            return array('characters' => array(), 'relationships' => array(), 'additional_tags' => array());
+        }
+
+        $characters = array();
+        $relationships = array();
+        $additional_tags = array();
+
+        foreach ($tags as $tag) {
+            // Skip the fandom tag as it's redundant
+            if ($tag === "Cinderella Boy - Punko (Webcomic)") {
+                continue;
+            }
+            
+            // Relationships typically have "/" or "&" in them
+            if (strpos($tag, '/') !== false || strpos($tag, ' & ') !== false) {
+                $relationships[] = $tag;
+            }
+            // Character tags often end with (Cinderella Boy) or are character names
+            else if (strpos($tag, '(Cinderella Boy)') !== false || 
+                     preg_match('/^(Chase|Buddy|Deacon|Silver|Bronze|Goldie|Violet|Prunella|Ralph|Beth|Dale)(\s|$)/', $tag)) {
+                $characters[] = $tag;
+            }
+            // Everything else goes to additional tags
+            else {
+                $additional_tags[] = $tag;
+            }
+        }
+
+        return array(
+            'characters' => $characters,
+            'relationships' => $relationships,
+            'additional_tags' => $additional_tags
+        );
     }
     
     private function fetch_feed_items($limit = 10, $offset = 0) {

@@ -1,3 +1,4 @@
+
 .cb-feed-container {
     max-width: 800px;
     margin: 0 auto;
@@ -118,6 +119,30 @@
     font-weight: 500;
 }
 
+/* New tag sections styling */
+.cb-item-tags-sections {
+    margin-bottom: 1rem;
+}
+
+.cb-tag-section {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+
+.cb-tag-section:last-child {
+    margin-bottom: 0;
+}
+
+.cb-section-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #6b7280;
+    margin-right: 0.25rem;
+}
+
 .cb-item-description {
     margin-bottom: 1rem;
     color: #4b5563;
@@ -138,12 +163,6 @@
 
 .cb-chapters::before {
     content: "📚 ";
-}
-
-.cb-item-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
 }
 
 .cb-tag {
@@ -249,6 +268,12 @@
     
     .cb-item-stats {
         flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .cb-tag-section {
+        flex-direction: column;
+        align-items: flex-start;
         gap: 0.5rem;
     }
     
