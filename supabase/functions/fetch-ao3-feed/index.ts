@@ -333,7 +333,7 @@ function parseIndividualWork(workHtml, workIndex) {
   
   // Extract published date from datetime attribute
   let published_date = null;
-  const dateRegex = /<time[^>]*datetime="([^"]+)"/i;
+  const dateRegex = /<p[^>]*class="datetime"[^>]*>([^<]+)<\/p>/i;
   const dateMatch = workHtml.match(dateRegex);
   
   if (dateMatch) {
