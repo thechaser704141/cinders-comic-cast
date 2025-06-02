@@ -239,8 +239,8 @@ function parseWorksFromHTML(html) {
   try {
     console.log('Starting HTML parsing...');
     
-    // Updated pattern to match AO3's actual work structure
-    const workBlurbPattern = /<li[^>]*class="[^"]*work[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
+    // More flexible pattern to match work list items
+    const workBlurbPattern = /<li[^>]*class="[^"]*work[^"]*blurb[^"]*group[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
     let workMatch;
     let matchCount = 0;
     
@@ -275,8 +275,8 @@ function parseWorksFromHTML(html) {
 function parseWorkFromBlurb(workHtml, matchId) {
   console.log(`Parsing work blurb for match ID: ${matchId}`);
   
-  // Extract title and link - look for the main work title
-  const titlePattern = /<h4[^>]*class="heading"[^>]*>[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i;
+  // Extract title and link - more flexible pattern
+  const titlePattern = /<h4[^>]*class="[^"]*heading[^"]*"[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/i;
   const titleMatch = workHtml.match(titlePattern);
   
   if (!titleMatch) {
@@ -285,24 +285,20 @@ function parseWorkFromBlurb(workHtml, matchId) {
   }
   
   const titleLink = titleMatch[1].startsWith('http') ? titleMatch[1] : 'https://archiveofourown.org' + titleMatch[1];
-  const title = titleMatch[2].replace(/<[^>]*>/g, '').trim();
+  const title = titleMatch[2].trim();
   
   console.log(`Parsing work: "${title}"`);
   
-  // Extract author from the byline
+  // Extract author - look for rel="author" links
   let author = 'Unknown';
-  const bylinePattern = /<h4[^>]*class="byline"[^>]*>([\s\S]*?)<\/h4>/i;
-  const bylineMatch = workHtml.match(bylinePattern);
-  
-  if (bylineMatch) {
-    const authorPattern = /<a[^>]+rel="author"[^>]*>(.*?)<\/a>/i;
-    const authorMatch = bylineMatch[1].match(authorPattern);
-    if (authorMatch) {
-      author = authorMatch[1].replace(/<[^>]*>/g, '').trim();
-    }
+  const authorPattern = /<a[^>]*rel="author"[^>]*>([^<]+)<\/a>/i;
+  const authorMatch = workHtml.match(authorPattern);
+  if (authorMatch) {
+    author = authorMatch[1].trim();
+    console.log(`Found author: ${author}`);
   }
   
-  // Extract description/summary - look for blockquote with class summary
+  // Extract description/summary - look for summary class
   let description = '';
   const summaryPattern = /<blockquote[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/blockquote>/i;
   const summaryMatch = workHtml.match(summaryPattern);
@@ -318,111 +314,83 @@ function parseWorkFromBlurb(workHtml, matchId) {
     console.log(`Found description: ${description.substring(0, 100)}...`);
   }
   
-  // Extract tags - look for ul with class tags
+  // Extract tags - look for freeform and relationship tags
   const tags = [];
-  const tagListPattern = /<ul[^>]*class="[^"]*tags[^"]*"[^>]*>([\s\S]*?)<\/ul>/i;
-  const tagListMatch = workHtml.match(tagListPattern);
   
-  if (tagListMatch) {
-    const tagListHtml = tagListMatch[1];
+  // Get all tag links
+  const tagPattern = /<a[^>]*class="tag"[^>]*>([^<]+)<\/a>/gi;
+  let tagMatch;
+  
+  while ((tagMatch = tagPattern.exec(workHtml)) !== null) {
+    const tag = tagMatch[1].trim()
+      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
     
-    // Extract individual tags from <a> elements with class tag
-    const tagPattern = /<a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]+)<\/a>/gi;
-    let tagMatch;
-    
-    while ((tagMatch = tagPattern.exec(tagListHtml)) !== null) {
-      let tag = tagMatch[1].trim();
-      tag = tag.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
-      
-      // Skip main fandom tag and duplicates
-      if (tag && !tags.includes(tag) && tag !== 'Cinderella Boy - Punko (Webcomic)' && tag.length > 0) {
-        tags.push(tag);
-      }
+    // Skip the main fandom tag and duplicates
+    if (tag && !tags.includes(tag) && tag !== 'Cinderella Boy - Punko (Webcomic)' && tag.length > 0) {
+      tags.push(tag);
     }
   }
   
   console.log(`Found ${tags.length} tags: ${tags.slice(0, 5).join(', ')}${tags.length > 5 ? '...' : ''}`);
   
-  // Extract stats (word count, chapters) from dl with class stats
+  // Extract stats (word count, chapters)
   let word_count = null;
   let chapters = null;
   
-  const statsPattern = /<dl[^>]*class="[^"]*stats[^"]*"[^>]*>([\s\S]*?)<\/dl>/i;
-  const statsMatch = workHtml.match(statsPattern);
+  // Look for stats in dd elements
+  const wordPattern = /<dt[^>]*>Words?:<\/dt>\s*<dd[^>]*>([\d,]+)<\/dd>/i;
+  const wordMatch = workHtml.match(wordPattern);
+  if (wordMatch) {
+    word_count = parseInt(wordMatch[1].replace(/,/g, ''));
+    console.log(`Found word count: ${word_count}`);
+  }
   
-  if (statsMatch) {
-    const statsHtml = statsMatch[1];
-    
-    // Word count
-    const wordPattern = /<dt[^>]*>Words?:<\/dt>\s*<dd[^>]*>([\d,]+)<\/dd>/i;
-    const wordMatch = statsHtml.match(wordPattern);
-    if (wordMatch) {
-      word_count = parseInt(wordMatch[1].replace(/,/g, ''));
-      console.log(`Found word count: ${word_count}`);
-    }
-    
-    // Chapters
-    const chapterPattern = /<dt[^>]*>Chapters?:<\/dt>\s*<dd[^>]*>(\d+(?:\/\d+)?)<\/dd>/i;
-    const chapterMatch = statsHtml.match(chapterPattern);
-    if (chapterMatch) {
-      chapters = chapterMatch[1];
-      console.log(`Found chapters: ${chapters}`);
-    }
+  const chapterPattern = /<dt[^>]*>Chapters?:<\/dt>\s*<dd[^>]*>(\d+(?:\/\d+)?)<\/dd>/i;
+  const chapterMatch = workHtml.match(chapterPattern);
+  if (chapterMatch) {
+    chapters = chapterMatch[1];
+    console.log(`Found chapters: ${chapters}`);
   }
   
   // Extract rating from required tags
   let rating = null;
-  const requiredTagsPattern = /<ul[^>]*class="[^"]*required-tags[^"]*"[^>]*>([\s\S]*?)<\/ul>/i;
-  const requiredTagsMatch = workHtml.match(requiredTagsPattern);
+  const ratingTags = ['General Audiences', 'Teen And Up Audiences', 'Mature', 'Explicit', 'Not Rated'];
   
-  if (requiredTagsMatch) {
-    const requiredTagsHtml = requiredTagsMatch[1];
-    const ratingTags = ['General Audiences', 'Teen And Up Audiences', 'Mature', 'Explicit', 'Not Rated'];
-    
-    for (const ratingTag of ratingTags) {
-      const ratingPattern = new RegExp(`title="${ratingTag}"`, 'i');
-      if (ratingPattern.test(requiredTagsHtml)) {
-        rating = ratingTag;
-        console.log(`Found rating: ${rating}`);
-        break;
-      }
+  // Look for rating in span with rating class or title attribute
+  for (const ratingTag of ratingTags) {
+    const ratingPattern = new RegExp(`(title="${ratingTag}"|>${ratingTag}<)`, 'i');
+    if (ratingPattern.test(workHtml)) {
+      rating = ratingTag;
+      console.log(`Found rating: ${rating}`);
+      break;
     }
   }
   
-  // Extract published/updated date - look for datetime in the work
+  // Extract date - look for datetime attributes in the work
   let published_date = null;
   
-  // Look for datetime in the work - updated pattern for AO3's actual structure
-  const dateTimePattern = /<p[^>]*class="[^"]*datetime[^"]*"[^>]*>[\s\S]*?<time[^>]*datetime="([^"]+)"[^>]*>/i;
-  const dateTimeMatch = workHtml.match(dateTimePattern);
+  // Look for any datetime element - published or updated
+  const dateTimePattern = /<time[^>]*datetime="([^"]+)"[^>]*>/gi;
+  let dateMatch;
+  const dates = [];
   
-  if (dateTimeMatch) {
-    const dateStr = dateTimeMatch[1];
+  while ((dateMatch = dateTimePattern.exec(workHtml)) !== null) {
+    const dateStr = dateMatch[1];
     const parsedDate = new Date(dateStr);
     if (!isNaN(parsedDate.getTime())) {
-      published_date = parsedDate.toISOString();
-      console.log(`Found published date: ${dateStr} -> ${published_date}`);
+      dates.push(parsedDate);
     }
   }
   
-  // Fallback: look for any datetime attribute
-  if (!published_date) {
-    const fallbackDatePattern = /<time[^>]*datetime="([^"]+)"[^>]*>/i;
-    const fallbackDateMatch = workHtml.match(fallbackDatePattern);
-    if (fallbackDateMatch) {
-      const dateStr = fallbackDateMatch[1];
-      const parsedDate = new Date(dateStr);
-      if (!isNaN(parsedDate.getTime())) {
-        published_date = parsedDate.toISOString();
-        console.log(`Found fallback date: ${dateStr} -> ${published_date}`);
-      }
-    }
-  }
-  
-  // Last resort: use current date
-  if (!published_date) {
+  // Use the most recent date (usually the updated date)
+  if (dates.length > 0) {
+    const mostRecentDate = new Date(Math.max(...dates.map(d => d.getTime())));
+    published_date = mostRecentDate.toISOString();
+    console.log(`Found date: ${published_date}`);
+  } else {
+    // Fallback to current date
     published_date = new Date().toISOString();
-    console.log(`No published date found, using current date: ${published_date}`);
+    console.log(`No date found, using current date: ${published_date}`);
   }
   
   const result = {
