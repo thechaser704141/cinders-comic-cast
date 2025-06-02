@@ -117,14 +117,15 @@ function parseRSSEntry(entryXml, entryIndex) {
     return null;
   }
   
-  // Extract author
-  let author = getElementText(entryXml, 'author');
-  if (!author) {
-    // Try to get author from name tag inside author
-    const authorMatch = entryXml.match(/<author[^>]*>[\s\S]*?<name[^>]*>([^<]+)<\/name>[\s\S]*?<\/author>/i);
-    if (authorMatch) {
-      author = cleanText(authorMatch[1]);
-    }
+  // Extract author - fix to get just the name text without XML tags
+  let author = null;
+  // Try to get author from name tag inside author
+  const authorMatch = entryXml.match(/<author[^>]*>[\s\S]*?<name[^>]*>([^<]+)<\/name>[\s\S]*?<\/author>/i);
+  if (authorMatch) {
+    author = cleanText(authorMatch[1]);
+  } else {
+    // Fallback to simple author tag
+    author = getElementText(entryXml, 'author');
   }
   console.log(`Author: ${author}`);
   
