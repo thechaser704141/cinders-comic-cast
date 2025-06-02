@@ -12,6 +12,10 @@ interface RSSFeedItemProps {
     author?: string;
     published_date?: string;
     tags?: string[];
+    categories?: string[];
+    characters?: string[];
+    relationships?: string[];
+    additional_tags?: string[];
     word_count?: number;
     chapters?: string;
     rating?: string;
@@ -48,10 +52,30 @@ export const RSSFeedItem = ({ item }: RSSFeedItemProps) => {
     ));
   };
 
-  // Filter out the fandom tag
-  const filteredTags = item.tags ? item.tags.filter(tag => 
-    tag !== "Cinderella Boy - Punko (Webcomic)"
-  ) : [];
+  const renderTagSection = (title: string, tags: string[] = [], limit: number = 4) => {
+    if (!tags || tags.length === 0) return null;
+    
+    const displayTags = tags.slice(0, limit);
+    const hasMore = tags.length > limit;
+    
+    return (
+      <div className="mb-3">
+        <h4 className="text-sm font-medium text-gray-700 mb-2">{title}:</h4>
+        <div className="flex flex-wrap gap-1">
+          {displayTags.map((tag, index) => (
+            <Badge key={index} variant="secondary" className="text-xs px-2 py-1">
+              {tag}
+            </Badge>
+          ))}
+          {hasMore && (
+            <Badge variant="outline" className="text-xs px-2 py-1">
+              +{tags.length - limit} more
+            </Badge>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <Card className="hover:shadow-lg transition-shadow duration-200">
@@ -89,25 +113,26 @@ export const RSSFeedItem = ({ item }: RSSFeedItemProps) => {
               <span>{item.rating}</span>
             </div>
           )}
+          
+          {item.categories && item.categories.length > 0 && (
+            <div className="flex items-center gap-1">
+              <span className="font-medium">Categories:</span>
+              <span>{item.categories.join(', ')}</span>
+            </div>
+          )}
         </div>
       </CardHeader>
       
       <CardContent>
-        {filteredTags && filteredTags.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-4">
-            {filteredTags.map((tag, index) => (
-              <Badge key={index} variant="secondary" className="text-xs px-2 py-1">
-                {tag}
-              </Badge>
-            ))}
-          </div>
-        )}
-        
         {item.description && (
           <div className="text-gray-700 mb-4">
             {formatDescription(item.description)}
           </div>
         )}
+        
+        {renderTagSection("Characters", item.characters, 4)}
+        {renderTagSection("Relationships", item.relationships, 4)}
+        {renderTagSection("Additional Tags", item.additional_tags, 4)}
         
         <div className="flex flex-wrap gap-4 text-sm text-gray-600">
           {item.word_count && (
