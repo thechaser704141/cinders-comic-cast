@@ -36,30 +36,57 @@ function generateUUID() {
   });
 }
 
+// Helper function to clean HTML text
+function cleanHtmlText(text) {
+  if (!text) return null;
+  return text
+    .replace(/<[^>]*>/g, '') // Remove all HTML tags
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Helper function to extract text between tags
+function extractBetweenTags(html, startTag, endTag) {
+  const startIndex = html.indexOf(startTag);
+  if (startIndex === -1) return null;
+  
+  const contentStart = startIndex + startTag.length;
+  const endIndex = html.indexOf(endTag, contentStart);
+  if (endIndex === -1) return null;
+  
+  return html.substring(contentStart, endIndex);
+}
+
 function parseWorksFromHTML(html) {
   const works = [];
   
   try {
-    console.log('Starting HTML parsing...');
+    console.log('Starting improved HTML parsing...');
     console.log('HTML length:', html.length);
     
-    // DEBUG: Log a sample of the HTML to see the structure
-    console.log('=== HTML SAMPLE (first 3000 chars) ===');
-    console.log(html.substring(0, 3000));
-    console.log('=== END HTML SAMPLE ===');
-    
-    // Look for work items - they're in li elements with work blurb class
-    const workItemRegex = /<li[^>]*class="[^"]*work[^"]*blurb[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
+    // Look for work items using a more flexible pattern
+    // AO3 works are typically in <li> elements with specific classes
+    const workItemRegex = /<li[^>]*(?:class="[^"]*(?:work|blurb)[^"]*"[^>]*|[^>]*)>([\s\S]*?)<\/li>/gi;
     let workMatch;
     let matchCount = 0;
     
-    while ((workMatch = workItemRegex.exec(html)) !== null && matchCount < 5) {
+    while ((workMatch = workItemRegex.exec(html)) !== null && matchCount < 10) {
       matchCount++;
       const workHtml = workMatch[1];
       
+      // Skip if this doesn't look like a work item
+      if (!workHtml.includes('href="/works/') && !workHtml.includes('rel="author"')) {
+        continue;
+      }
+      
       console.log(`=== PROCESSING WORK ${matchCount} ===`);
       console.log(`Work HTML length: ${workHtml.length}`);
-      console.log(`Work HTML sample: ${workHtml.substring(0, 1000)}`);
       
       try {
         const work = parseIndividualWork(workHtml, matchCount);
@@ -84,131 +111,152 @@ function parseWorksFromHTML(html) {
 function parseIndividualWork(workHtml, workIndex) {
   console.log(`=== Parsing work ${workIndex} ===`);
   
-  // Extract title and link - more flexible pattern
-  const titleRegex = /<h4[^>]*class="[^"]*heading[^"]*"[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/i;
-  const titleMatch = workHtml.match(titleRegex);
+  // Extract title and link with multiple patterns
+  let title = null;
+  let link = null;
   
-  if (!titleMatch) {
-    console.log(`No title found for work ${workIndex}`);
-    return null;
+  // Try different patterns for title/link extraction
+  const titlePatterns = [
+    /<h4[^>]*class="[^"]*heading[^"]*"[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/i,
+    /<a[^>]*href="(\/works\/[^"]+)"[^>]*>([^<]+)<\/a>/i,
+    /<a[^>]*href="([^"]*\/works\/[^"]*)"[^>]*>([^<]+)<\/a>/i
+  ];
+  
+  for (const pattern of titlePatterns) {
+    const match = workHtml.match(pattern);
+    if (match) {
+      link = match[1].startsWith('http') ? match[1] : 'https://archiveofourown.org' + match[1];
+      title = cleanHtmlText(match[2]);
+      break;
+    }
   }
   
-  const link = titleMatch[1].startsWith('http') ? titleMatch[1] : 'https://archiveofourown.org' + titleMatch[1];
-  const title = titleMatch[2].trim();
+  if (!title || !link) {
+    console.log(`No title/link found for work ${workIndex}`);
+    return null;
+  }
   
   console.log(`Title: "${title}"`);
   console.log(`Link: ${link}`);
   
-  // Extract author - look for rel="author" links
-  const authorRegex = /<a[^>]*rel="author"[^>]*>([^<]+)<\/a>/i;
-  const authorMatch = workHtml.match(authorRegex);
-  const author = authorMatch ? authorMatch[1].trim() : null;
-  console.log(`Author: ${author || 'Unknown'}`);
+  // Extract author with multiple patterns
+  let author = null;
+  const authorPatterns = [
+    /<a[^>]*rel="author"[^>]*>([^<]+)<\/a>/i,
+    /by[\s\S]*?<a[^>]*>([^<]+)<\/a>/i
+  ];
   
-  // SIMPLIFIED DESCRIPTION EXTRACTION - just look for any blockquote
-  let description = null;
-  console.log('=== DESCRIPTION DEBUGGING ===');
-  
-  // Look for any blockquote element first
-  const simpleBlockquoteRegex = /<blockquote[^>]*>([\s\S]*?)<\/blockquote>/i;
-  const blockquoteMatch = workHtml.match(simpleBlockquoteRegex);
-  
-  if (blockquoteMatch) {
-    console.log('Found blockquote!');
-    let descContent = blockquoteMatch[1];
-    
-    description = descContent
-      .replace(/<[^>]*>/g, '') // Remove all HTML tags
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/\s+/g, ' ')
-      .trim();
-    
-    if (description.length > 200) {
-      description = description.substring(0, 200) + '...';
+  for (const pattern of authorPatterns) {
+    const match = workHtml.match(pattern);
+    if (match) {
+      author = cleanHtmlText(match[1]);
+      break;
     }
-    console.log(`Description: "${description}"`);
-  } else {
-    console.log('No blockquote found');
   }
   
-  // SIMPLIFIED TAGS EXTRACTION
-  const tags = [];
-  console.log('=== TAGS DEBUGGING ===');
+  console.log(`Author: ${author || 'Unknown'}`);
   
-  // Look for any a element with class="tag"
+  // Extract description from blockquote or summary
+  let description = null;
+  const descPatterns = [
+    /<blockquote[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/blockquote>/i,
+    /<blockquote[^>]*>([\s\S]*?)<\/blockquote>/i,
+    /<div[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/div>/i
+  ];
+  
+  for (const pattern of descPatterns) {
+    const match = workHtml.match(pattern);
+    if (match) {
+      description = cleanHtmlText(match[1]);
+      if (description && description.length > 200) {
+        description = description.substring(0, 200) + '...';
+      }
+      break;
+    }
+  }
+  
+  console.log(`Description: ${description ? `"${description.substring(0, 50)}..."` : 'None'}`);
+  
+  // Extract tags
+  const tags = [];
   const tagRegex = /<a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]+)<\/a>/gi;
   let tagMatch;
   
   while ((tagMatch = tagRegex.exec(workHtml)) !== null) {
-    let tag = tagMatch[1]
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/\*/g, '/')
-      .trim();
+    let tag = cleanHtmlText(tagMatch[1]);
     
     if (tag && 
         tag !== 'Cinderella Boy - Punko (Webcomic)' && 
         tag !== 'No Archive Warnings Apply' &&
         !tags.includes(tag)) {
       tags.push(tag);
-      console.log(`Found tag: "${tag}"`);
     }
   }
   
-  console.log(`Total tags found: ${tags.length}`);
+  console.log(`Tags found: ${tags.length} - ${tags.slice(0, 3).join(', ')}`);
   
-  // SIMPLIFIED DATE EXTRACTION
+  // Extract published date with multiple patterns
   let published_date = null;
-  console.log('=== DATE DEBUGGING ===');
+  const datePatterns = [
+    /<dd[^>]*class="[^"]*published[^"]*"[^>]*>([^<]+)<\/dd>/i,
+    /Published:[\s\S]*?(\d{4}-\d{2}-\d{2})/i,
+    /(\d{2}\s+\w{3}\s+\d{4})/i,
+    /(\d{1,2}\/\d{1,2}\/\d{4})/i
+  ];
   
-  // Look for any date pattern in the HTML
-  const dateRegex = /(\d{2}\s+\w{3}\s+\d{4})/i;
-  const dateMatch = workHtml.match(dateRegex);
-  
-  if (dateMatch) {
-    console.log(`Date string found: "${dateMatch[1]}"`);
-    try {
-      const parsedDate = new Date(dateMatch[1]);
-      if (!isNaN(parsedDate.getTime())) {
-        published_date = parsedDate.toISOString();
-        console.log(`Successfully parsed date: ${published_date}`);
+  for (const pattern of datePatterns) {
+    const match = workHtml.match(pattern);
+    if (match) {
+      try {
+        const dateStr = cleanHtmlText(match[1]);
+        const parsedDate = new Date(dateStr);
+        if (!isNaN(parsedDate.getTime())) {
+          published_date = parsedDate.toISOString();
+          break;
+        }
+      } catch (e) {
+        console.log(`Date parsing error: ${e.message}`);
       }
-    } catch (e) {
-      console.log(`Date parsing error: ${e.message}`);
     }
-  } else {
-    console.log('No date pattern found');
   }
   
-  // SIMPLIFIED STATS EXTRACTION
+  console.log(`Published date: ${published_date || 'None'}`);
+  
+  // Extract word count and chapters from stats
   let word_count = null;
   let chapters = null;
   
-  console.log('=== STATS DEBUGGING ===');
+  const statsPatterns = [
+    /<dd[^>]*class="[^"]*words[^"]*"[^>]*>([^<]+)<\/dd>/i,
+    /(\d+(?:,\d+)*)\s*words/i
+  ];
   
-  // Look for word count
-  const wordMatch = workHtml.match(/(\d+(?:,\d+)*)\s*words/i);
-  if (wordMatch) {
-    const wordStr = wordMatch[1].replace(/,/g, '').trim();
-    word_count = parseInt(wordStr) || null;
-    console.log(`Word count found: ${word_count}`);
+  for (const pattern of statsPatterns) {
+    const match = workHtml.match(pattern);
+    if (match) {
+      const wordStr = cleanHtmlText(match[1]).replace(/,/g, '');
+      word_count = parseInt(wordStr) || null;
+      break;
+    }
   }
   
-  // Look for chapters
-  const chapterMatch = workHtml.match(/(\d+(?:\/\d+)?)\s*chapters?/i);
-  if (chapterMatch) {
-    chapters = chapterMatch[1].trim();
-    console.log(`Chapters found: ${chapters}`);
+  const chapterPatterns = [
+    /<dd[^>]*class="[^"]*chapters[^"]*"[^>]*>([^<]+)<\/dd>/i,
+    /(\d+(?:\/\d+)?)\s*chapters?/i
+  ];
+  
+  for (const pattern of chapterPatterns) {
+    const match = workHtml.match(pattern);
+    if (match) {
+      chapters = cleanHtmlText(match[1]);
+      break;
+    }
   }
   
-  // Extract rating from required-tags section
+  console.log(`Word count: ${word_count || 'None'}`);
+  console.log(`Chapters: ${chapters || 'None'}`);
+  
+  // Extract rating
   let rating = null;
   const ratingPatterns = [
     { pattern: /title="General Audiences"/i, name: 'General Audiences' },
@@ -221,10 +269,11 @@ function parseIndividualWork(workHtml, workIndex) {
   for (const ratingInfo of ratingPatterns) {
     if (ratingInfo.pattern.test(workHtml)) {
       rating = ratingInfo.name;
-      console.log(`Rating: ${rating}`);
       break;
     }
   }
+  
+  console.log(`Rating: ${rating || 'None'}`);
   
   const result = {
     title,
@@ -259,13 +308,13 @@ serve(async (req) => {
     // Base URL for Cinderella Boy works
     const baseUrl = 'https://archiveofourown.org/tags/Cinderella%20Boy%20-%20Punko%20(Webcomic)/works';
     
-    console.log('Starting AO3 scraping with improved parsing...');
+    console.log('Starting AO3 scraping with completely rewritten parsing...');
     
     // Add random delay before starting
     await randomDelay(500, 1500);
     
     const works = [];
-    const maxPages = 1; // Limit to 1 page for debugging
+    const maxPages = 2; // Increased to 2 pages for better data
     
     for (let page = 1; page <= maxPages; page++) {
       console.log(`Fetching page ${page}...`);
