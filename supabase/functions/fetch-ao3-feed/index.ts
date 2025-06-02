@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -96,122 +97,153 @@ function parseIndividualWork(workHtml, workIndex) {
   const author = authorMatch ? authorMatch[1].trim() : null;
   console.log(`Author: ${author || 'Unknown'}`);
   
-  // Extract description from <blockquote class="userstuff summary">
+  // Extract description - more flexible approach
   let description = null;
-  console.log('Searching for description in blockquote...');
+  console.log('Searching for description...');
   
-  const descRegex = /<blockquote[^>]*class="userstuff summary"[^>]*>([\s\S]*?)<\/blockquote>/i;
-  const descMatch = workHtml.match(descRegex);
+  // Try multiple patterns for description
+  const descPatterns = [
+    /<blockquote[^>]*class="[^"]*userstuff[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/blockquote>/i,
+    /<div[^>]*class="[^"]*summary[^"]*"[^>]*>[\s\S]*?<blockquote[^>]*>([\s\S]*?)<\/blockquote>/i,
+    /<p[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/p>/i
+  ];
   
-  if (descMatch) {
-    console.log('Found description!');
-    description = descMatch[1]
-      .replace(/<[^>]*>/g, '') // Remove HTML tags
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/\s+/g, ' ')
-      .trim();
-    
-    if (description.length > 180) {
-      description = description.substring(0, 180) + '...';
+  for (const pattern of descPatterns) {
+    const match = workHtml.match(pattern);
+    if (match) {
+      console.log('Found description!');
+      description = match[1]
+        .replace(/<[^>]*>/g, '') // Remove HTML tags
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/\s+/g, ' ')
+        .trim();
+      
+      if (description.length > 180) {
+        description = description.substring(0, 180) + '...';
+      }
+      console.log(`Description: "${description}"`);
+      break;
     }
-    console.log(`Description: "${description}"`);
-  } else {
-    console.log('No description found in blockquote class="userstuff summary"');
   }
   
-  // Extract tags from <ul class="tags commas"> looking for all <li> items
-  const tags = [];
-  console.log('Searching for tags in ul class="tags commas"...');
+  if (!description) {
+    console.log('No description found');
+  }
   
-  const tagSectionRegex = /<ul[^>]*class="tags commas"[^>]*>([\s\S]*?)<\/ul>/i;
+  // Extract tags from <ul class="tags commas">
+  const tags = [];
+  console.log('Searching for tags...');
+  
+  const tagSectionRegex = /<ul[^>]*class="[^"]*tags[^"]*commas[^"]*"[^>]*>([\s\S]*?)<\/ul>/i;
   const tagSectionMatch = workHtml.match(tagSectionRegex);
   
   if (tagSectionMatch) {
     console.log('Found tags section!');
     const tagSection = tagSectionMatch[1];
     
-    // Look for all <li> items in this section
-    const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
-    let liMatch;
+    // Look for all <a> tags within <li> elements
+    const tagRegex = /<li[^>]*>[\s\S]*?<a[^>]*>([^<]+)<\/a>[\s\S]*?<\/li>/gi;
+    let tagMatch;
     
-    while ((liMatch = liRegex.exec(tagSection)) !== null) {
-      const liContent = liMatch[1];
-      
-      // Extract text from any <a> tag within the <li>
-      const linkRegex = /<a[^>]*>([^<]+)<\/a>/i;
-      const linkMatch = liContent.match(linkRegex);
-      
-      if (linkMatch) {
-        const tag = linkMatch[1].trim();
-        if (tag && tag !== 'Cinderella Boy - Punko (Webcomic)' && !tags.includes(tag)) {
-          tags.push(tag);
-        }
+    while ((tagMatch = tagRegex.exec(tagSection)) !== null) {
+      const tag = tagMatch[1].trim();
+      if (tag && tag !== 'Cinderella Boy - Punko (Webcomic)' && !tags.includes(tag)) {
+        tags.push(tag);
       }
     }
     console.log(`Found ${tags.length} tags: ${tags.slice(0, 5).join(', ')}${tags.length > 5 ? '...' : ''}`);
   } else {
-    console.log('No tags found in ul class="tags commas"');
+    console.log('No tags section found');
   }
   
-  // Extract date from <p class="datetime">
+  // Extract date - more flexible patterns
   let published_date = null;
-  console.log('Searching for date in p class="datetime"...');
+  console.log('Searching for date...');
   
-  const dateRegex = /<p[^>]*class="datetime"[^>]*>([^<]+)<\/p>/i;
-  const dateMatch = workHtml.match(dateRegex);
+  const datePatterns = [
+    /<p[^>]*class="[^"]*datetime[^"]*"[^>]*>([^<]+)<\/p>/i,
+    /<time[^>]*datetime="([^"]+)"[^>]*>/i,
+    /<span[^>]*class="[^"]*date[^"]*"[^>]*>([^<]+)<\/span>/i
+  ];
   
-  if (dateMatch) {
-    console.log('Found date!');
-    const dateStr = dateMatch[1].trim();
-    console.log(`Raw date string: "${dateStr}"`);
-    try {
-      const parsedDate = new Date(dateStr);
-      if (!isNaN(parsedDate.getTime())) {
-        published_date = parsedDate.toISOString();
-        console.log(`Parsed date: ${published_date}`);
-      } else {
-        console.log(`Invalid date format: ${dateStr}`);
+  for (const pattern of datePatterns) {
+    const match = workHtml.match(pattern);
+    if (match) {
+      console.log('Found date!');
+      const dateStr = match[1].trim();
+      console.log(`Raw date string: "${dateStr}"`);
+      try {
+        const parsedDate = new Date(dateStr);
+        if (!isNaN(parsedDate.getTime())) {
+          published_date = parsedDate.toISOString();
+          console.log(`Parsed date: ${published_date}`);
+          break;
+        }
+      } catch (e) {
+        console.log(`Date parsing error: ${e.message}`);
       }
-    } catch (e) {
-      console.log(`Date parsing error: ${e.message}`);
     }
-  } else {
-    console.log('No date found in p class="datetime"');
   }
   
-  // Extract stats (word count, chapters) from dd elements
+  if (!published_date) {
+    console.log('No date found');
+  }
+  
+  // Extract stats (word count, chapters) - more flexible patterns
   let word_count = null;
   let chapters = null;
   
-  // Look for words
-  const wordRegex = /<dd[^>]*class="[^"]*words[^"]*"[^>]*>([^<]+)<\/dd>/i;
-  const wordMatch = workHtml.match(wordRegex);
-  if (wordMatch) {
-    const wordStr = wordMatch[1].replace(/,/g, '').trim();
-    word_count = parseInt(wordStr) || null;
-    console.log(`Word count: ${word_count}`);
+  // Look for words in dd elements or spans
+  const wordPatterns = [
+    /<dd[^>]*class="[^"]*words[^"]*"[^>]*>([^<]+)<\/dd>/i,
+    /<span[^>]*class="[^"]*words[^"]*"[^>]*>([^<]+)<\/span>/i,
+    /(\d+(?:,\d+)*)\s*words/i
+  ];
+  
+  for (const pattern of wordPatterns) {
+    const match = workHtml.match(pattern);
+    if (match) {
+      const wordStr = match[1].replace(/,/g, '').trim();
+      word_count = parseInt(wordStr) || null;
+      if (word_count) {
+        console.log(`Word count: ${word_count}`);
+        break;
+      }
+    }
   }
   
   // Look for chapters
-  const chapterRegex = /<dd[^>]*class="[^"]*chapters[^"]*"[^>]*>([^<]+)<\/dd>/i;
-  const chapterMatch = workHtml.match(chapterRegex);
-  if (chapterMatch) {
-    chapters = chapterMatch[1].trim();
-    console.log(`Chapters: ${chapters}`);
+  const chapterPatterns = [
+    /<dd[^>]*class="[^"]*chapters[^"]*"[^>]*>([^<]+)<\/dd>/i,
+    /<span[^>]*class="[^"]*chapters[^"]*"[^>]*>([^<]+)<\/span>/i,
+    /(\d+(?:\/\d+)?)\s*chapters?/i
+  ];
+  
+  for (const pattern of chapterPatterns) {
+    const match = workHtml.match(pattern);
+    if (match) {
+      chapters = match[1].trim();
+      console.log(`Chapters: ${chapters}`);
+      break;
+    }
   }
   
-  // Extract rating from title attributes
+  // Extract rating from title attributes or class names
   let rating = null;
   const ratingPatterns = [
     { pattern: /title="General Audiences"/i, name: 'General Audiences' },
     { pattern: /title="Teen And Up Audiences"/i, name: 'Teen And Up Audiences' },
     { pattern: /title="Mature"/i, name: 'Mature' },
     { pattern: /title="Explicit"/i, name: 'Explicit' },
-    { pattern: /title="Not Rated"/i, name: 'Not Rated' }
+    { pattern: /title="Not Rated"/i, name: 'Not Rated' },
+    { pattern: /class="[^"]*rating-general[^"]*"/i, name: 'General Audiences' },
+    { pattern: /class="[^"]*rating-teen[^"]*"/i, name: 'Teen And Up Audiences' },
+    { pattern: /class="[^"]*rating-mature[^"]*"/i, name: 'Mature' },
+    { pattern: /class="[^"]*rating-explicit[^"]*"/i, name: 'Explicit' }
   ];
   
   for (const ratingInfo of ratingPatterns) {
@@ -222,7 +254,7 @@ function parseIndividualWork(workHtml, workIndex) {
     }
   }
   
-  // Log a sample of the HTML for the first work to see the structure
+  // Log a sample of the HTML for debugging
   if (workIndex === 1) {
     console.log('=== SAMPLE HTML (first 2000 chars) ===');
     console.log(workHtml.substring(0, 2000));
@@ -243,6 +275,7 @@ function parseIndividualWork(workHtml, workIndex) {
   };
   
   console.log(`=== Work ${workIndex} parsed successfully ===`);
+  console.log(`Final result:`, JSON.stringify(result, null, 2));
   return result;
 }
 
