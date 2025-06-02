@@ -113,8 +113,6 @@ function parseIndividualWork(workHtml, workIndex) {
   
   if (!title || !link) {
     console.log(`No title/link found for work ${workIndex}`);
-    // Log some HTML to debug
-    console.log(`Work HTML sample: ${workHtml.substring(0, 300)}`);
     return null;
   }
   
@@ -152,69 +150,72 @@ function parseIndividualWork(workHtml, workIndex) {
   }
   console.log(`Tags found: ${tags.length} - ${tags.slice(0, 3).join(', ')}`);
   
-  // Extract published date - AO3 stores dates in <p class="datetime">
+  // Extract LAST UPDATED date - this is what AO3 actually shows
   let published_date = null;
   
-  console.log(`\n--- DATE EXTRACTION DEBUG FOR WORK ${workIndex} ---`);
+  console.log(`\n--- LAST UPDATED DATE EXTRACTION FOR WORK ${workIndex} ---`);
   
-  // Look for the datetime paragraph which contains the actual date
-  const datetimePattern = /<p[^>]*class="[^"]*datetime[^"]*"[^>]*>([\s\S]*?)<\/p>/i;
-  const datetimeMatch = workHtml.match(datetimePattern);
+  // Look for the datetime paragraph containing "Last Updated"
+  // Pattern: <p class="datetime">Last Updated: <time datetime="2024-01-15T12:00:00Z">15 Jan 2024</time></p>
+  const lastUpdatedPattern = /<p[^>]*class="[^"]*datetime[^"]*"[^>]*>[\s\S]*?Last Updated[\s\S]*?<time[^>]*datetime="([^"]+)"[^>]*>/i;
+  const lastUpdatedMatch = workHtml.match(lastUpdatedPattern);
   
-  if (datetimeMatch) {
-    console.log(`Found datetime paragraph: ${datetimeMatch[1]}`);
-    
-    // Within the datetime paragraph, look for the actual datetime attribute
-    const datetimeContent = datetimeMatch[1];
-    const datetimeAttrPattern = /datetime="([^"]+)"/i;
-    const datetimeAttrMatch = datetimeContent.match(datetimeAttrPattern);
-    
-    if (datetimeAttrMatch) {
-      try {
-        const dateStr = datetimeAttrMatch[1];
-        console.log(`Found datetime attribute: "${dateStr}"`);
-        const parsedDate = new Date(dateStr);
-        if (!isNaN(parsedDate.getTime())) {
-          published_date = parsedDate.toISOString();
-          console.log(`Successfully parsed date: ${published_date}`);
-        } else {
-          console.log(`Failed to parse datetime: "${dateStr}"`);
-        }
-      } catch (e) {
-        console.log(`Date parsing exception: ${e.message}`);
+  if (lastUpdatedMatch) {
+    try {
+      const dateStr = lastUpdatedMatch[1];
+      console.log(`Found Last Updated datetime: "${dateStr}"`);
+      const parsedDate = new Date(dateStr);
+      if (!isNaN(parsedDate.getTime())) {
+        published_date = parsedDate.toISOString();
+        console.log(`Successfully parsed Last Updated date: ${published_date}`);
+      } else {
+        console.log(`Failed to parse Last Updated datetime: "${dateStr}"`);
       }
-    } else {
-      console.log('No datetime attribute found in datetime paragraph');
-      console.log(`Datetime content: ${datetimeContent}`);
+    } catch (e) {
+      console.log(`Last Updated date parsing exception: ${e.message}`);
     }
   } else {
-    console.log('No datetime paragraph found');
+    console.log('No Last Updated datetime found, trying alternative patterns...');
     
-    // Fallback: look for any datetime attribute in the entire work HTML
-    const fallbackDatetimePattern = /datetime="([^"]+)"/i;
-    const fallbackMatch = workHtml.match(fallbackDatetimePattern);
-    if (fallbackMatch) {
-      try {
-        const dateStr = fallbackMatch[1];
-        console.log(`Found fallback datetime: "${dateStr}"`);
-        const parsedDate = new Date(dateStr);
-        if (!isNaN(parsedDate.getTime())) {
-          published_date = parsedDate.toISOString();
-          console.log(`Successfully parsed fallback date: ${published_date}`);
+    // Alternative pattern: look for any datetime in the datetime paragraph
+    const datetimePattern = /<p[^>]*class="[^"]*datetime[^"]*"[^>]*>([\s\S]*?)<\/p>/i;
+    const datetimeMatch = workHtml.match(datetimePattern);
+    
+    if (datetimeMatch) {
+      console.log(`Found datetime paragraph: ${datetimeMatch[1]}`);
+      
+      // Look for any time element with datetime attribute
+      const timePattern = /<time[^>]*datetime="([^"]+)"[^>]*>/i;
+      const timeMatch = datetimeMatch[1].match(timePattern);
+      
+      if (timeMatch) {
+        try {
+          const dateStr = timeMatch[1];
+          console.log(`Found datetime in time element: "${dateStr}"`);
+          const parsedDate = new Date(dateStr);
+          if (!isNaN(parsedDate.getTime())) {
+            published_date = parsedDate.toISOString();
+            console.log(`Successfully parsed datetime: ${published_date}`);
+          }
+        } catch (e) {
+          console.log(`Time element date parsing exception: ${e.message}`);
         }
-      } catch (e) {
-        console.log(`Fallback date parsing exception: ${e.message}`);
+      } else {
+        console.log('No time element with datetime found in datetime paragraph');
+        console.log(`Full datetime content: ${datetimeMatch[1]}`);
       }
+    } else {
+      console.log('No datetime paragraph found at all');
     }
   }
   
   if (!published_date) {
-    console.log('No valid published date found');
-    // Log a larger sample to see what we're missing
-    console.log(`Work HTML sample (chars 500-1000): ${workHtml.substring(500, 1000)}`);
+    console.log('No valid last updated date found');
+    // Log a sample to see what we're missing
+    console.log(`Work HTML sample for debugging: ${workHtml.substring(0, 1000)}`);
   }
   
-  console.log(`--- END DATE EXTRACTION DEBUG ---\n`);
+  console.log(`--- END LAST UPDATED DATE EXTRACTION ---\n`);
   
   // Extract statistics (word count, chapters, etc.)
   let word_count = null;
@@ -226,7 +227,7 @@ function parseIndividualWork(workHtml, workIndex) {
   
   if (statsMatch) {
     const statsHtml = statsMatch[1];
-    console.log(`Found stats section`);
+    console.log(`Found stats section for work ${workIndex}`);
     
     // Extract word count
     const wordsPattern = /<dt[^>]*class="[^"]*words[^"]*"[^>]*>[\s\S]*?<dd[^>]*class="[^"]*words[^"]*"[^>]*>([^<]+)<\/dd>/i;
@@ -270,7 +271,7 @@ function parseIndividualWork(workHtml, workIndex) {
     description,
     link,
     author,
-    published_date,
+    published_date, // This now contains the "Last Updated" date
     tags: tags.length > 0 ? tags : null,
     word_count,
     chapters,
