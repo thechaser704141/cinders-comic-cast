@@ -11,9 +11,7 @@ const corsHeaders = {
 const userAgents = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0',
-  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/91.0.864.59'
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0'
 ];
 
 // Random delay function
@@ -51,55 +49,83 @@ function cleanHtmlText(text) {
     .trim();
 }
 
-// Helper function to extract text between tags
-function extractBetweenTags(html, startTag, endTag) {
-  const startIndex = html.indexOf(startTag);
-  if (startIndex === -1) return null;
-  
-  const contentStart = startIndex + startTag.length;
-  const endIndex = html.indexOf(endTag, contentStart);
-  if (endIndex === -1) return null;
-  
-  return html.substring(contentStart, endIndex);
-}
-
 function parseWorksFromHTML(html) {
   const works = [];
   
   try {
-    console.log('Starting improved HTML parsing...');
+    console.log('=== DEBUGGING HTML STRUCTURE ===');
     console.log('HTML length:', html.length);
     
-    // Look for work items using a more flexible pattern
-    // AO3 works are typically in <li> elements with specific classes
-    const workItemRegex = /<li[^>]*(?:class="[^"]*(?:work|blurb)[^"]*"[^>]*|[^>]*)>([\s\S]*?)<\/li>/gi;
-    let workMatch;
-    let matchCount = 0;
-    
-    while ((workMatch = workItemRegex.exec(html)) !== null && matchCount < 10) {
-      matchCount++;
-      const workHtml = workMatch[1];
-      
-      // Skip if this doesn't look like a work item
-      if (!workHtml.includes('href="/works/') && !workHtml.includes('rel="author"')) {
-        continue;
+    // Log a sample of the HTML to see the actual structure
+    const sampleStart = html.indexOf('<ol class="work index group">');
+    if (sampleStart !== -1) {
+      console.log('Found work list container');
+      const sampleEnd = sampleStart + 3000;
+      console.log('Sample HTML around work list:', html.substring(sampleStart, sampleEnd));
+    } else {
+      console.log('No work list container found, looking for alternatives...');
+      // Look for any ol or ul elements
+      const olMatch = html.match(/<ol[^>]*>/i);
+      const ulMatch = html.match(/<ul[^>]*>/i);
+      if (olMatch || ulMatch) {
+        console.log('Found ol/ul elements:', olMatch ? olMatch[0] : '', ulMatch ? ulMatch[0] : '');
       }
       
-      console.log(`=== PROCESSING WORK ${matchCount} ===`);
-      console.log(`Work HTML length: ${workHtml.length}`);
-      
-      try {
-        const work = parseIndividualWork(workHtml, matchCount);
-        if (work) {
-          console.log(`Successfully parsed work: "${work.title}"`);
-          works.push(work);
-        }
-      } catch (error) {
-        console.error(`Error parsing work ${matchCount}:`, error);
+      // Look for work-related classes
+      const workClasses = html.match(/class="[^"]*work[^"]*"/gi);
+      if (workClasses) {
+        console.log('Found work-related classes:', workClasses.slice(0, 5));
       }
     }
     
-    console.log(`Total works parsed: ${works.length}`);
+    // Try multiple approaches to find works
+    
+    // Approach 1: Look for work blurb class
+    const blurbRegex = /<li[^>]*class="[^"]*blurb[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
+    let match;
+    let workCount = 0;
+    
+    while ((match = blurbRegex.exec(html)) !== null && workCount < 20) {
+      workCount++;
+      console.log(`\n=== PARSING WORK ${workCount} ===`);
+      const workHtml = match[1];
+      console.log('Work HTML length:', workHtml.length);
+      console.log('Work HTML sample (first 500 chars):', workHtml.substring(0, 500));
+      
+      const work = parseIndividualWork(workHtml, workCount);
+      if (work && work.title && work.link) {
+        console.log(`Successfully parsed work: "${work.title}"`);
+        works.push(work);
+      } else {
+        console.log('Failed to parse work properly');
+      }
+    }
+    
+    if (works.length === 0) {
+      console.log('No works found with blurb class, trying alternative approach...');
+      
+      // Approach 2: Look for any li with work-related content
+      const workRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
+      let workMatch;
+      let altWorkCount = 0;
+      
+      while ((workMatch = workRegex.exec(html)) !== null && altWorkCount < 5) {
+        const liContent = workMatch[1];
+        if (liContent.includes('href="/works/') || liContent.includes('class="heading"')) {
+          altWorkCount++;
+          console.log(`\n=== ALTERNATIVE PARSING ${altWorkCount} ===`);
+          console.log('LI content sample:', liContent.substring(0, 500));
+          
+          const work = parseIndividualWork(liContent, altWorkCount);
+          if (work && work.title && work.link) {
+            console.log(`Successfully parsed alternative work: "${work.title}"`);
+            works.push(work);
+          }
+        }
+      }
+    }
+    
+    console.log(`\nFinal result: ${works.length} works parsed`);
     
   } catch (error) {
     console.error('Error in parseWorksFromHTML:', error);
@@ -109,25 +135,40 @@ function parseWorksFromHTML(html) {
 }
 
 function parseIndividualWork(workHtml, workIndex) {
-  console.log(`=== Parsing work ${workIndex} ===`);
+  console.log(`Parsing work ${workIndex}...`);
   
-  // Extract title and link with multiple patterns
+  // Extract title and link - try multiple patterns
   let title = null;
   let link = null;
   
-  // Try different patterns for title/link extraction
-  const titlePatterns = [
-    /<h4[^>]*class="[^"]*heading[^"]*"[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/i,
-    /<a[^>]*href="(\/works\/[^"]+)"[^>]*>([^<]+)<\/a>/i,
-    /<a[^>]*href="([^"]*\/works\/[^"]*)"[^>]*>([^<]+)<\/a>/i
-  ];
+  // Pattern 1: Standard AO3 work link
+  const linkPattern1 = /<a[^>]*href="(\/works\/\d+[^"]*)"[^>]*>([^<]+)<\/a>/i;
+  const match1 = workHtml.match(linkPattern1);
+  if (match1) {
+    link = 'https://archiveofourown.org' + match1[1];
+    title = cleanHtmlText(match1[2]);
+    console.log(`Pattern 1 - Title: "${title}", Link: ${link}`);
+  }
   
-  for (const pattern of titlePatterns) {
-    const match = workHtml.match(pattern);
-    if (match) {
-      link = match[1].startsWith('http') ? match[1] : 'https://archiveofourown.org' + match[1];
-      title = cleanHtmlText(match[2]);
-      break;
+  // Pattern 2: Look for any work link
+  if (!title) {
+    const linkPattern2 = /href="(https:\/\/archiveofourown\.org\/works\/\d+[^"]*)"[^>]*>([^<]+)<\/a>/i;
+    const match2 = workHtml.match(linkPattern2);
+    if (match2) {
+      link = match2[1];
+      title = cleanHtmlText(match2[2]);
+      console.log(`Pattern 2 - Title: "${title}", Link: ${link}`);
+    }
+  }
+  
+  // Pattern 3: Look for heading class
+  if (!title) {
+    const linkPattern3 = /<h4[^>]*class="[^"]*heading[^"]*"[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/i;
+    const match3 = workHtml.match(linkPattern3);
+    if (match3) {
+      link = match3[1].startsWith('http') ? match3[1] : 'https://archiveofourown.org' + match3[1];
+      title = cleanHtmlText(match3[2]);
+      console.log(`Pattern 3 - Title: "${title}", Link: ${link}`);
     }
   }
   
@@ -136,32 +177,29 @@ function parseIndividualWork(workHtml, workIndex) {
     return null;
   }
   
-  console.log(`Title: "${title}"`);
-  console.log(`Link: ${link}`);
-  
-  // Extract author with multiple patterns
+  // Extract author
   let author = null;
   const authorPatterns = [
     /<a[^>]*rel="author"[^>]*>([^<]+)<\/a>/i,
-    /by[\s\S]*?<a[^>]*>([^<]+)<\/a>/i
+    /by\s+<a[^>]*>([^<]+)<\/a>/i,
+    /<a[^>]*href="\/users\/[^"]*"[^>]*>([^<]+)<\/a>/i
   ];
   
   for (const pattern of authorPatterns) {
     const match = workHtml.match(pattern);
     if (match) {
       author = cleanHtmlText(match[1]);
+      console.log(`Author found: ${author}`);
       break;
     }
   }
   
-  console.log(`Author: ${author || 'Unknown'}`);
-  
-  // Extract description from blockquote or summary
+  // Extract description
   let description = null;
   const descPatterns = [
     /<blockquote[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/blockquote>/i,
-    /<blockquote[^>]*>([\s\S]*?)<\/blockquote>/i,
-    /<div[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/div>/i
+    /<div[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<blockquote[^>]*>([\s\S]*?)<\/blockquote>/i
   ];
   
   for (const pattern of descPatterns) {
@@ -171,11 +209,10 @@ function parseIndividualWork(workHtml, workIndex) {
       if (description && description.length > 200) {
         description = description.substring(0, 200) + '...';
       }
+      console.log(`Description found: ${description ? description.substring(0, 50) + '...' : 'None'}`);
       break;
     }
   }
-  
-  console.log(`Description: ${description ? `"${description.substring(0, 50)}..."` : 'None'}`);
   
   // Extract tags
   const tags = [];
@@ -183,25 +220,20 @@ function parseIndividualWork(workHtml, workIndex) {
   let tagMatch;
   
   while ((tagMatch = tagRegex.exec(workHtml)) !== null) {
-    let tag = cleanHtmlText(tagMatch[1]);
-    
-    if (tag && 
-        tag !== 'Cinderella Boy - Punko (Webcomic)' && 
-        tag !== 'No Archive Warnings Apply' &&
-        !tags.includes(tag)) {
+    const tag = cleanHtmlText(tagMatch[1]);
+    if (tag && tag !== 'Cinderella Boy - Punko (Webcomic)' && !tags.includes(tag)) {
       tags.push(tag);
     }
   }
-  
   console.log(`Tags found: ${tags.length} - ${tags.slice(0, 3).join(', ')}`);
   
-  // Extract published date with multiple patterns
+  // Extract published date
   let published_date = null;
   const datePatterns = [
     /<dd[^>]*class="[^"]*published[^"]*"[^>]*>([^<]+)<\/dd>/i,
-    /Published:[\s\S]*?(\d{4}-\d{2}-\d{2})/i,
-    /(\d{2}\s+\w{3}\s+\d{4})/i,
-    /(\d{1,2}\/\d{1,2}\/\d{4})/i
+    /Published:\s*([^<\n]+)/i,
+    /(\d{4}-\d{2}-\d{2})/i,
+    /(\d{2}\s+\w{3}\s+\d{4})/i
   ];
   
   for (const pattern of datePatterns) {
@@ -212,34 +244,34 @@ function parseIndividualWork(workHtml, workIndex) {
         const parsedDate = new Date(dateStr);
         if (!isNaN(parsedDate.getTime())) {
           published_date = parsedDate.toISOString();
+          console.log(`Date found: ${published_date}`);
           break;
         }
       } catch (e) {
-        console.log(`Date parsing error: ${e.message}`);
+        console.log(`Date parsing failed: ${e.message}`);
       }
     }
   }
   
-  console.log(`Published date: ${published_date || 'None'}`);
-  
-  // Extract word count and chapters from stats
+  // Extract word count
   let word_count = null;
-  let chapters = null;
-  
-  const statsPatterns = [
+  const wordPatterns = [
     /<dd[^>]*class="[^"]*words[^"]*"[^>]*>([^<]+)<\/dd>/i,
     /(\d+(?:,\d+)*)\s*words/i
   ];
   
-  for (const pattern of statsPatterns) {
+  for (const pattern of wordPatterns) {
     const match = workHtml.match(pattern);
     if (match) {
       const wordStr = cleanHtmlText(match[1]).replace(/,/g, '');
       word_count = parseInt(wordStr) || null;
+      console.log(`Word count found: ${word_count}`);
       break;
     }
   }
   
+  // Extract chapters
+  let chapters = null;
   const chapterPatterns = [
     /<dd[^>]*class="[^"]*chapters[^"]*"[^>]*>([^<]+)<\/dd>/i,
     /(\d+(?:\/\d+)?)\s*chapters?/i
@@ -249,31 +281,28 @@ function parseIndividualWork(workHtml, workIndex) {
     const match = workHtml.match(pattern);
     if (match) {
       chapters = cleanHtmlText(match[1]);
+      console.log(`Chapters found: ${chapters}`);
       break;
     }
   }
-  
-  console.log(`Word count: ${word_count || 'None'}`);
-  console.log(`Chapters: ${chapters || 'None'}`);
   
   // Extract rating
   let rating = null;
-  const ratingPatterns = [
-    { pattern: /title="General Audiences"/i, name: 'General Audiences' },
-    { pattern: /title="Teen And Up Audiences"/i, name: 'Teen And Up Audiences' },
-    { pattern: /title="Mature"/i, name: 'Mature' },
-    { pattern: /title="Explicit"/i, name: 'Explicit' },
-    { pattern: /title="Not Rated"/i, name: 'Not Rated' }
-  ];
+  const ratingMap = {
+    'General Audiences': /General\s+Audiences/i,
+    'Teen And Up Audiences': /Teen\s+And\s+Up/i,
+    'Mature': /\bMature\b/i,
+    'Explicit': /\bExplicit\b/i,
+    'Not Rated': /Not\s+Rated/i
+  };
   
-  for (const ratingInfo of ratingPatterns) {
-    if (ratingInfo.pattern.test(workHtml)) {
-      rating = ratingInfo.name;
+  for (const [ratingName, pattern] of Object.entries(ratingMap)) {
+    if (pattern.test(workHtml)) {
+      rating = ratingName;
+      console.log(`Rating found: ${rating}`);
       break;
     }
   }
-  
-  console.log(`Rating: ${rating || 'None'}`);
   
   const result = {
     title,
@@ -288,8 +317,7 @@ function parseIndividualWork(workHtml, workIndex) {
     rating
   };
   
-  console.log(`=== FINAL RESULT FOR WORK ${workIndex} ===`);
-  console.log(JSON.stringify(result, null, 2));
+  console.log(`Final work ${workIndex}:`, JSON.stringify(result, null, 2));
   return result;
 }
 
@@ -308,13 +336,13 @@ serve(async (req) => {
     // Base URL for Cinderella Boy works
     const baseUrl = 'https://archiveofourown.org/tags/Cinderella%20Boy%20-%20Punko%20(Webcomic)/works';
     
-    console.log('Starting AO3 scraping with completely rewritten parsing...');
+    console.log('Starting AO3 scraping with enhanced debugging...');
     
     // Add random delay before starting
     await randomDelay(500, 1500);
     
     const works = [];
-    const maxPages = 2; // Increased to 2 pages for better data
+    const maxPages = 1; // Start with just 1 page for debugging
     
     for (let page = 1; page <= maxPages; page++) {
       console.log(`Fetching page ${page}...`);
@@ -332,9 +360,8 @@ serve(async (req) => {
             'Connection': 'keep-alive',
             'Upgrade-Insecure-Requests': '1',
             'Cache-Control': 'max-age=0',
-            'Referer': page > 1 ? baseUrl : 'https://archiveofourown.org/',
           },
-          signal: AbortSignal.timeout(45000) // 45 second timeout
+          signal: AbortSignal.timeout(45000)
         });
 
         if (!response.ok) {
@@ -381,13 +408,13 @@ serve(async (req) => {
       console.error('Error updating metadata:', metadataError);
     }
 
-    // Store/update works in database with proper conflict resolution
+    // Store/update works in database
     let successCount = 0;
     let errorCount = 0;
     
     for (const work of works) {
       try {
-        // First try to find existing work by AO3 work ID or link
+        // First try to find existing work by link
         const { data: existingWork } = await supabaseClient
           .from('rss_items')
           .select('id')
@@ -420,7 +447,7 @@ serve(async (req) => {
             successCount++;
           }
         } else {
-          // Insert new work with generated UUID
+          // Insert new work
           const workToInsert = {
             id: generateUUID(),
             title: work.title,
