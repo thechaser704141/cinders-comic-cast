@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -190,34 +189,26 @@ function parseRSSEntry(entryXml, entryIndex) {
   let tags = [];
   
   if (rawContent) {
-    console.log('Raw content preview:', rawContent.substring(0, 200));
+    console.log('Raw content preview:', rawContent.substring(0, 500));
     
-    // Extract tags from the HTML structure
-    // Look for the tag list structure
-    const tagListMatch = rawContent.match(/<ul[^>]*class="tags"[^>]*>([\s\S]*?)<\/ul>/i);
-    if (tagListMatch) {
-      const tagListHtml = tagListMatch[1];
-      console.log('Found tag list HTML');
-      
-      // Extract all <a> tags with class="tag"
-      const tagRegex = /<a[^>]*class="tag"[^>]*>([^<]+)<\/a>/gi;
-      let tagMatch;
-      
-      while ((tagMatch = tagRegex.exec(tagListHtml)) !== null) {
-        const tag = cleanText(tagMatch[1]);
-        if (tag && !tags.includes(tag)) {
-          // Skip certain metadata tags that aren't story tags
-          if (!tag.match(/^(General Audiences|Teen And Up Audiences|Mature|Explicit|Not Rated|No Archive Warnings Apply|Graphic Depictions Of Violence|Major Character Death|Rape\/Non-Con|Underage|F\/F|F\/M|M\/M|Gen|Multi|Other)$/)) {
-            tags.push(tag);
-            console.log(`Found story tag: ${tag}`);
-          } else {
-            console.log(`Skipped metadata tag: ${tag}`);
-          }
+    // Extract tags from the HTML structure - look for all <a> tags with class="tag"
+    const tagRegex = /<a[^>]*class="tag"[^>]*>([^<]+)<\/a>/gi;
+    let tagMatch;
+    
+    while ((tagMatch = tagRegex.exec(rawContent)) !== null) {
+      const tag = cleanText(tagMatch[1]);
+      if (tag && !tags.includes(tag)) {
+        // Skip basic metadata tags but keep everything else
+        if (!tag.match(/^(General Audiences|Teen And Up Audiences|Mature|Explicit|Not Rated|No Archive Warnings Apply|Graphic Depictions Of Violence|Major Character Death|Rape\/Non-Con|Underage|F\/F|F\/M|M\/M|Gen|Multi|Other|Warnings|Categories|Fandoms|Relationships|Additional Tags)$/i)) {
+          tags.push(tag);
+          console.log(`Found story tag: ${tag}`);
+        } else {
+          console.log(`Skipped metadata tag: ${tag}`);
         }
       }
     }
     
-    // Clean up HTML tags first
+    // Clean up HTML tags first for description processing
     const cleanContent = rawContent.replace(/<[^>]*>/g, '').trim();
     
     // Remove the "by Author" part at the beginning if it's there
