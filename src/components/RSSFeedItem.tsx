@@ -174,32 +174,9 @@ export const RSSFeedItem = ({ item }: RSSFeedItemProps) => {
             )}
           </div>
         </div>
-      </CardHeader>
-      
-      <CardContent>
-        {item.description && (
-          <div className="text-gray-700 mb-4">
-            {formatDescription(item.description)}
-          </div>
-        )}
-        
-        <div className="flex flex-wrap gap-4 text-sm text-gray-600 mb-4">
-          {item.word_count && (
-            <div className="flex items-center gap-1">
-              <BookOpen className="h-4 w-4" />
-              <span>{formatWordCount(item.word_count)}</span>
-            </div>
-          )}
-          
-          {item.chapters && (
-            <div className="flex items-center gap-1">
-              <span>{item.chapters} chapters</span>
-            </div>
-          )}
-        </div>
 
-        {/* Categorized Tags */}
-        <div className="space-y-3">
+        {/* Categorized Tags - moved above description */}
+        <div className="space-y-3 mt-4">
           {renderTagSection(
             characters, 
             "Characters", 
@@ -219,6 +196,29 @@ export const RSSFeedItem = ({ item }: RSSFeedItemProps) => {
             "Additional Tags", 
             <Tag className="h-4 w-4" />, 
             4
+          )}
+        </div>
+      </CardHeader>
+      
+      <CardContent>
+        {item.description && (
+          <div className="text-gray-700 mb-4">
+            {formatDescription(item.description)}
+          </div>
+        )}
+        
+        <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+          {item.word_count && (
+            <div className="flex items-center gap-1">
+              <BookOpen className="h-4 w-4" />
+              <span>{formatWordCount(item.word_count)}</span>
+            </div>
+          )}
+          
+          {item.chapters && (
+            <div className="flex items-center gap-1">
+              <span>{item.chapters} chapters</span>
+            </div>
           )}
         </div>
       </CardContent>
