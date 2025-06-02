@@ -18,7 +18,8 @@ export const RSSFeed = () => {
       const { data, error } = await supabase
         .from('rss_items')
         .select('*')
-        .order('updated_at', { ascending: false }); // Changed from published_date to updated_at
+        .order('published_date', { ascending: false, nullsLast: true })
+        .order('updated_at', { ascending: false }); // Secondary sort for items with null published_date
       
       if (error) {
         console.error('Error fetching RSS items:', error);

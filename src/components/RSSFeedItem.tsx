@@ -21,7 +21,13 @@ interface RSSFeedItemProps {
 export const RSSFeedItem = ({ item }: RSSFeedItemProps) => {
   const formatDate = (dateString?: string) => {
     if (!dateString) return 'Unknown date';
-    return new Date(dateString).toLocaleDateString();
+    // Format date like WordPress plugin: "M j, Y" (e.g., "Jan 15, 2024")
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', { 
+      year: 'numeric', 
+      month: 'short', 
+      day: 'numeric' 
+    });
   };
 
   const formatWordCount = (count?: number) => {
