@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -44,6 +45,24 @@ function cleanText(text) {
     .replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, ' ')
     .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Helper function to clean and format description with proper line breaks
+function formatDescription(text) {
+  if (!text) return null;
+  
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    // Add line breaks before capital letters that follow periods without spaces
+    .replace(/\.([A-Z])/g, '.\n\n$1')
+    // Clean up multiple spaces but preserve intentional line breaks
+    .replace(/ +/g, ' ')
     .trim();
 }
 
@@ -183,8 +202,8 @@ function parseRSSEntry(entryXml, entryIndex) {
     const metadataMatch = contentWithoutAuthor.match(/(.*?)(Words:\s*\d+.*)/i);
     
     if (metadataMatch) {
-      // Extract description (everything before metadata)
-      description = cleanText(metadataMatch[1]);
+      // Extract description (everything before metadata) with proper formatting
+      description = formatDescription(metadataMatch[1]);
       const metadata = metadataMatch[2];
       
       // Extract word count
@@ -205,8 +224,8 @@ function parseRSSEntry(entryXml, entryIndex) {
         rating = cleanText(ratingMatch[1]);
       }
     } else {
-      // If no clear metadata pattern, use the whole content as description
-      description = cleanText(contentWithoutAuthor);
+      // If no clear metadata pattern, use the whole content as description with formatting
+      description = formatDescription(contentWithoutAuthor);
     }
     
     // Limit description length
@@ -220,8 +239,10 @@ function parseRSSEntry(entryXml, entryIndex) {
   console.log(`Chapters: ${chapters}`);
   console.log(`Rating: ${rating}`);
   
-  // Extract ALL tags/categories from XML - these are the story tags
+  // Extract ALL tags/categories from XML - get every single tag without filtering
   const tags = [];
+  
+  // Method 1: Extract from category term attributes
   const categoryRegex = /<category[^>]*term="([^"]*)"[^>]*>/gi;
   let categoryMatch;
   
@@ -229,10 +250,11 @@ function parseRSSEntry(entryXml, entryIndex) {
     const tag = cleanText(categoryMatch[1]);
     if (tag && !tags.includes(tag)) {
       tags.push(tag);
+      console.log(`Found tag (term): ${tag}`);
     }
   }
   
-  // Also try looking for category text content
+  // Method 2: Extract from category text content
   const categoryTextRegex = /<category[^>]*>([^<]+)<\/category>/gi;
   let categoryTextMatch;
   
@@ -240,10 +262,12 @@ function parseRSSEntry(entryXml, entryIndex) {
     const tag = cleanText(categoryTextMatch[1]);
     if (tag && !tags.includes(tag)) {
       tags.push(tag);
+      console.log(`Found tag (text): ${tag}`);
     }
   }
   
-  console.log(`Tags found: ${tags.length} - ${tags.slice(0, 3).join(', ')}`);
+  console.log(`Total tags found: ${tags.length}`);
+  console.log(`All tags: ${tags.join(', ')}`);
   
   const result = {
     title,
@@ -274,10 +298,25 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
+    // CLEAR ALL CACHED DATA FIRST
+    console.log('Clearing all existing data...');
+    
+    // Delete all existing RSS items
+    const { error: deleteError } = await supabaseClient
+      .from('rss_items')
+      .delete()
+      .neq('id', '00000000-0000-0000-0000-000000000000'); // Delete all rows
+    
+    if (deleteError) {
+      console.error('Error clearing existing data:', deleteError);
+    } else {
+      console.log('Successfully cleared all existing RSS items');
+    }
+
     // Use the correct RSS feed URL with tag ID instead of tag name
     const feedUrl = 'https://archiveofourown.org/tags/104741227/feed.atom';
     
-    console.log('Starting AO3 RSS feed parsing...');
+    console.log('Starting fresh AO3 RSS feed parsing...');
     console.log('Feed URL:', feedUrl);
     
     // Add random delay before starting
@@ -297,7 +336,9 @@ serve(async (req) => {
           'DNT': '1',
           'Connection': 'keep-alive',
           'Upgrade-Insecure-Requests': '1',
-          'Cache-Control': 'max-age=0',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
         },
         signal: AbortSignal.timeout(45000)
       });
@@ -340,73 +381,38 @@ serve(async (req) => {
       console.error('Error updating metadata:', metadataError);
     }
 
-    // Store/update works in database
+    // Store all works as new entries in database
     let successCount = 0;
     let errorCount = 0;
     
     for (const work of works) {
       try {
-        // First try to find existing work by link
-        const { data: existingWork } = await supabaseClient
+        const workToInsert = {
+          id: generateUUID(),
+          title: work.title,
+          description: work.description,
+          link: work.link,
+          author: work.author,
+          published_date: work.published_date,
+          tags: work.tags,
+          word_count: work.word_count,
+          chapters: work.chapters,
+          fandom: work.fandom,
+          rating: work.rating,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        
+        const { error } = await supabaseClient
           .from('rss_items')
-          .select('id')
-          .eq('link', work.link)
-          .maybeSingle();
-
-        if (existingWork) {
-          // Update existing work
-          const { error } = await supabaseClient
-            .from('rss_items')
-            .update({
-              title: work.title,
-              description: work.description,
-              author: work.author,
-              published_date: work.published_date,
-              tags: work.tags,
-              word_count: work.word_count,
-              chapters: work.chapters,
-              fandom: work.fandom,
-              rating: work.rating,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', existingWork.id);
-          
-          if (error) {
-            console.error('Error updating work:', error);
-            errorCount++;
-          } else {
-            console.log(`Updated work: ${work.title}`);
-            successCount++;
-          }
+          .insert(workToInsert);
+        
+        if (error) {
+          console.error('Error inserting work:', error);
+          errorCount++;
         } else {
-          // Insert new work
-          const workToInsert = {
-            id: generateUUID(),
-            title: work.title,
-            description: work.description,
-            link: work.link,
-            author: work.author,
-            published_date: work.published_date,
-            tags: work.tags,
-            word_count: work.word_count,
-            chapters: work.chapters,
-            fandom: work.fandom,
-            rating: work.rating,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          };
-          
-          const { error } = await supabaseClient
-            .from('rss_items')
-            .insert(workToInsert);
-          
-          if (error) {
-            console.error('Error inserting work:', error);
-            errorCount++;
-          } else {
-            console.log(`Inserted new work: ${work.title}`);
-            successCount++;
-          }
+          console.log(`Inserted new work: ${work.title}`);
+          successCount++;
         }
         
         // Small delay between database operations
@@ -423,7 +429,7 @@ serve(async (req) => {
     return new Response(
       JSON.stringify({ 
         success: true, 
-        message: `Successfully processed ${works.length} works from AO3 RSS feed (${successCount} stored/updated, ${errorCount} errors)`,
+        message: `Successfully refreshed and processed ${works.length} works from AO3 RSS feed (${successCount} stored, ${errorCount} errors)`,
         works: works,
         total_found: works.length,
         stored: successCount,

@@ -35,6 +35,19 @@ export const RSSFeedItem = ({ item }: RSSFeedItemProps) => {
     return count.toLocaleString() + ' words';
   };
 
+  const formatDescription = (description?: string) => {
+    if (!description) return null;
+    
+    // Split by double newlines and create paragraphs
+    const paragraphs = description.split('\n\n').filter(p => p.trim());
+    
+    return paragraphs.map((paragraph, index) => (
+      <p key={index} className="mb-2 last:mb-0">
+        {paragraph.trim()}
+      </p>
+    ));
+  };
+
   return (
     <Card className="hover:shadow-lg transition-shadow duration-200">
       <CardHeader>
@@ -91,9 +104,9 @@ export const RSSFeedItem = ({ item }: RSSFeedItemProps) => {
         )}
         
         {item.description && (
-          <p className="text-gray-700 mb-4 line-clamp-3">
-            {item.description}
-          </p>
+          <div className="text-gray-700 mb-4">
+            {formatDescription(item.description)}
+          </div>
         )}
         
         <div className="flex flex-wrap gap-4 text-sm text-gray-600">
