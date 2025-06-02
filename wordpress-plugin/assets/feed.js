@@ -1,23 +1,16 @@
 
 jQuery(document).ready(function($) {
-    // Refresh button functionality
-    $('#cb-refresh-btn').on('click', function() {
-        refreshFeed();
-    });
-    
-    // Load feed link functionality
-    $(document).on('click', '#cb-load-feed', function(e) {
+    // Handle refresh button clicks
+    $(document).on('click', '.cb-refresh-btn', function(e) {
         e.preventDefault();
-        refreshFeed();
-    });
-    
-    function refreshFeed() {
-        const $btn = $('#cb-refresh-btn');
-        const $content = $('#cb-feed-content');
+        
+        var $btn = $(this);
+        var $container = $('#' + $btn.data('target'));
+        var $icon = $btn.find('.cb-refresh-icon');
         
         // Show loading state
-        $btn.prop('disabled', true).addClass('loading');
-        $btn.find('span:last').text('Refreshing...');
+        $btn.prop('disabled', true);
+        $icon.addClass('loading');
         
         $.ajax({
             url: cb_ajax.ajax_url,
@@ -26,50 +19,73 @@ jQuery(document).ready(function($) {
                 action: 'refresh_feed',
                 nonce: cb_ajax.nonce
             },
-            timeout: 60000, // 60 seconds
             success: function(response) {
                 if (response.success) {
-                    // Reload the page to show fresh content
+                    // Reload the page to show updated content
                     location.reload();
                 } else {
-                    showError('Failed to refresh feed: ' + (response.data || 'Unknown error'));
+                    alert('Failed to refresh feed: ' + (response.data || 'Unknown error'));
                 }
             },
-            error: function(xhr, status, error) {
-                let errorMessage = 'Failed to refresh feed';
-                if (status === 'timeout') {
-                    errorMessage = 'Request timed out. The feed refresh is still processing.';
-                } else if (error) {
-                    errorMessage += ': ' + error;
-                }
-                showError(errorMessage);
+            error: function() {
+                alert('Failed to refresh feed. Please try again.');
             },
             complete: function() {
-                // Reset button state
-                $btn.prop('disabled', false).removeClass('loading');
-                $btn.find('span:last').text('Refresh');
+                $btn.prop('disabled', false);
+                $icon.removeClass('loading');
             }
         });
-    }
+    });
     
-    function showError(message) {
-        const $content = $('#cb-feed-content');
-        $content.prepend(`
-            <div class="cb-error-message" style="background: #fee2e2; border: 1px solid #fecaca; color: #dc2626; padding: 1rem; border-radius: 0.5rem; margin-bottom: 1rem;">
-                ${message}
-            </div>
-        `);
+    // Handle pagination
+    $(document).on('click', '.cb-page-btn', function(e) {
+        e.preventDefault();
         
-        // Remove error message after 5 seconds
-        setTimeout(function() {
-            $('.cb-error-message').fadeOut(function() {
-                $(this).remove();
-            });
-        }, 5000);
+        var $btn = $(this);
+        var targetPage = $btn.data('page');
+        var $container = $('#' + $btn.data('target'));
+        var perPage = $container.data('per-page');
+        
+        // Show loading state
+        $btn.prop('disabled', true);
+        $btn.text('Loading...');
+        
+        // Update URL with new page parameter
+        var url = new URL(window.location);
+        url.searchParams.set('cb_page', targetPage);
+        window.history.pushState({}, '', url);
+        
+        // Reload page with new parameters
+        location.reload();
+    });
+    
+    // Handle load feed link for empty state
+    $(document).on('click', '.cb-load-feed', function(e) {
+        e.preventDefault();
+        
+        var $link = $(this);
+        var $container = $('#' + $link.data('target'));
+        var $refreshBtn = $container.find('.cb-refresh-btn');
+        
+        if ($refreshBtn.length) {
+            $refreshBtn.trigger('click');
+        }
+    });
+    
+    // Check URL parameters on page load
+    var urlParams = new URLSearchParams(window.location.search);
+    var cbPage = urlParams.get('cb_page');
+    
+    if (cbPage) {
+        // Update all feed containers to show the correct page
+        $('.cb-feed-container').each(function() {
+            var $container = $(this);
+            $container.attr('data-current-page', cbPage);
+        });
     }
     
     // Auto-refresh every hour
     setInterval(function() {
-        refreshFeed();
+        $('.cb-refresh-btn').first().trigger('click');
     }, 60 * 60 * 1000); // 1 hour
 });

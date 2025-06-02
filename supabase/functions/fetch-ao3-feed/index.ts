@@ -402,89 +402,160 @@ function parseWorkFromBlurb(workHtml) {
   // Extract tags with improved parsing
   const tags = [];
   
-  // Look for the tags section specifically
-  const tagsSection = workHtml.match(/<ul[^>]*class="[^"]*tags[^"]*"[^>]*>([\s\S]*?)<\/ul>/i);
-  if (tagsSection) {
-    console.log('Found tags section');
-    const tagsHtml = tagsSection[1];
-    
-    // Extract individual tag links
-    const tagPattern = /<a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]*)<\/a>/gi;
-    let tagMatch;
-    while ((tagMatch = tagPattern.exec(tagsHtml)) !== null) {
-      const tag = tagMatch[1].trim();
-      // Skip the main fandom tag and duplicates
-      if (tag && !tags.includes(tag) && tag !== 'Cinderella Boy - Punko (Webcomic)') {
-        tags.push(tag);
+  // Look for the tags section specifically - try multiple patterns
+  const tagsSectionPatterns = [
+    /<ul[^>]*class="[^"]*tags[^"]*"[^>]*>([\s\S]*?)<\/ul>/gi,
+    /<div[^>]*class="[^"]*tags[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
+    /<section[^>]*class="[^"]*tags[^"]*"[^>]*>([\s\S]*?)<\/section>/gi
+  ];
+  
+  for (const tagsSectionPattern of tagsSectionPatterns) {
+    let tagsSectionMatch;
+    while ((tagsSectionMatch = tagsSectionPattern.exec(workHtml)) !== null) {
+      console.log('Found tags section');
+      const tagsHtml = tagsSectionMatch[1];
+      
+      // Extract individual tag links with more comprehensive patterns
+      const tagPatterns = [
+        /<a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]*)<\/a>/gi,
+        /<span[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]*)<\/span>/gi,
+        /<li[^>]*class="[^"]*tag[^"]*"[^>]*><a[^>]*>([^<]*)<\/a>/gi,
+        /<li[^>]*><a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]*)<\/a>/gi
+      ];
+      
+      for (const tagPattern of tagPatterns) {
+        let tagMatch;
+        while ((tagMatch = tagPattern.exec(tagsHtml)) !== null) {
+          let tag = tagMatch[1].trim();
+          // Clean up the tag text
+          tag = tag.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+          
+          // Skip empty tags, main fandom tag, and duplicates
+          if (tag && !tags.includes(tag) && tag !== 'Cinderella Boy - Punko (Webcomic)' && tag.length > 0) {
+            tags.push(tag);
+          }
+        }
       }
     }
   }
   
-  // Fallback: look for tags anywhere in the work blurb
+  // If no tags found, try a broader search
   if (tags.length === 0) {
-    const tagPattern = /<a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]*)<\/a>/gi;
+    const broadTagPattern = /<a[^>]*href="\/tags\/[^"]*"[^>]*>([^<]+)<\/a>/gi;
     let tagMatch;
-    while ((tagMatch = tagPattern.exec(workHtml)) !== null) {
-      const tag = tagMatch[1].trim();
-      if (tag && !tags.includes(tag) && tag !== 'Cinderella Boy - Punko (Webcomic)') {
+    while ((tagMatch = broadTagPattern.exec(workHtml)) !== null) {
+      let tag = tagMatch[1].trim();
+      tag = tag.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+      
+      if (tag && !tags.includes(tag) && tag !== 'Cinderella Boy - Punko (Webcomic)' && tag.length > 0) {
         tags.push(tag);
       }
     }
   }
   
-  console.log(`Found ${tags.length} tags: ${tags.join(', ')}`);
+  console.log(`Found ${tags.length} tags: ${tags.slice(0, 5).join(', ')}${tags.length > 5 ? '...' : ''}`);
   
   // Extract stats
   let word_count = null;
   let chapters = null;
-  let rating = null;
   
-  const statsMatch = workHtml.match(/<dl[^>]+class="[^"]*stats[^"]*"[^>]*>([\s\S]*?)<\/dl>/i);
-  if (statsMatch) {
-    const statsHtml = statsMatch[1];
-    
-    // Word count
-    const wordMatch = statsHtml.match(/<dt[^>]*>Words:<\/dt>\s*<dd[^>]*>([\d,]+)<\/dd>/i);
-    if (wordMatch) {
-      word_count = parseInt(wordMatch[1].replace(/,/g, ''));
-    }
-    
-    // Chapters
-    const chapterMatch = statsHtml.match(/<dt[^>]*>Chapters:<\/dt>\s*<dd[^>]*>(\d+(?:\/\d+)?)<\/dd>/i);
-    if (chapterMatch) {
-      chapters = chapterMatch[1];
+  const statsPatterns = [
+    /<dl[^>]+class="[^"]*stats[^"]*"[^>]*>([\s\S]*?)<\/dl>/i,
+    /<div[^>]+class="[^"]*stats[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<section[^>]+class="[^"]*stats[^"]*"[^>]*>([\s\S]*?)<\/section>/i
+  ];
+  
+  for (const statsPattern of statsPatterns) {
+    const statsMatch = workHtml.match(statsPattern);
+    if (statsMatch) {
+      const statsHtml = statsMatch[1];
+      
+      // Word count - try multiple patterns
+      const wordPatterns = [
+        /<dt[^>]*>Words?:<\/dt>\s*<dd[^>]*>([\d,]+)<\/dd>/i,
+        /<span[^>]*class="[^"]*words[^"]*"[^>]*>[\s\S]*?([\d,]+)[\s\S]*?<\/span>/i,
+        /Words?:\s*([\d,]+)/i
+      ];
+      
+      for (const wordPattern of wordPatterns) {
+        const wordMatch = statsHtml.match(wordPattern);
+        if (wordMatch) {
+          word_count = parseInt(wordMatch[1].replace(/,/g, ''));
+          console.log(`Found word count: ${word_count}`);
+          break;
+        }
+      }
+      
+      // Chapters - try multiple patterns
+      const chapterPatterns = [
+        /<dt[^>]*>Chapters?:<\/dt>\s*<dd[^>]*>(\d+(?:\/\d+)?)<\/dd>/i,
+        /<span[^>]*class="[^"]*chapters[^"]*"[^>]*>[\s\S]*?(\d+(?:\/\d+)?)[\s\S]*?<\/span>/i,
+        /Chapters?:\s*(\d+(?:\/\d+)?)/i
+      ];
+      
+      for (const chapterPattern of chapterPatterns) {
+        const chapterMatch = statsHtml.match(chapterPattern);
+        if (chapterMatch) {
+          chapters = chapterMatch[1];
+          console.log(`Found chapters: ${chapters}`);
+          break;
+        }
+      }
+      
+      break; // Found stats section, no need to try other patterns
     }
   }
   
   // Extract rating from required tags section
-  const requiredTagsPattern = /<ul[^>]*class="[^"]*required-tags[^"]*"[^>]*>([\s\S]*?)<\/ul>/i;
-  const requiredTagsMatch = workHtml.match(requiredTagsPattern);
+  let rating = null;
+  const requiredTagsPatterns = [
+    /<ul[^>]*class="[^"]*required[^"]*tags[^"]*"[^>]*>([\s\S]*?)<\/ul>/i,
+    /<div[^>]*class="[^"]*required[^"]*tags[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<section[^>]*class="[^"]*required[^"]*tags[^"]*"[^>]*>([\s\S]*?)<\/section>/i
+  ];
   
-  if (requiredTagsMatch) {
-    const requiredTagsHtml = requiredTagsMatch[1];
-    const ratingTags = ['General Audiences', 'Teen And Up Audiences', 'Mature', 'Explicit', 'Not Rated'];
+  for (const requiredTagsPattern of requiredTagsPatterns) {
+    const requiredTagsMatch = workHtml.match(requiredTagsPattern);
     
-    for (const ratingTag of ratingTags) {
-      if (requiredTagsHtml.includes(ratingTag)) {
-        rating = ratingTag;
-        break;
+    if (requiredTagsMatch) {
+      const requiredTagsHtml = requiredTagsMatch[1];
+      const ratingTags = ['General Audiences', 'Teen And Up Audiences', 'Mature', 'Explicit', 'Not Rated'];
+      
+      for (const ratingTag of ratingTags) {
+        if (requiredTagsHtml.includes(ratingTag)) {
+          rating = ratingTag;
+          console.log(`Found rating: ${rating}`);
+          break;
+        }
       }
+      break;
+    }
+  }
+  
+  // If no rating found in required tags, try broader search
+  if (!rating) {
+    const broadRatingPattern = /<span[^>]*class="[^"]*rating[^"]*"[^>]*title="([^"]*)"[^>]*>/i;
+    const broadRatingMatch = workHtml.match(broadRatingPattern);
+    if (broadRatingMatch) {
+      rating = broadRatingMatch[1];
+      console.log(`Found rating via broad search: ${rating}`);
     }
   }
   
   // Extract published date with improved patterns
   let published_date = null;
   
-  // Look for datetime attributes in the work
+  // Look for datetime attributes in the work - try multiple patterns
   const dateTimePatterns = [
-    /<time[^>]*datetime="([^"]+)"[^>]*>/i,
-    /<span[^>]*datetime="([^"]+)"[^>]*>/i,
-    /<dd[^>]*class="[^"]*published[^"]*"[^>]*datetime="([^"]+)"[^>]*>/i
+    /<time[^>]*datetime="([^"]+)"[^>]*>/gi,
+    /<span[^>]*datetime="([^"]+)"[^>]*>/gi,
+    /<dd[^>]*class="[^"]*published[^"]*"[^>]*datetime="([^"]+)"[^>]*>/gi,
+    /<time[^>]*class="[^"]*datetime[^"]*"[^>]*datetime="([^"]+)"[^>]*>/gi
   ];
   
   for (const pattern of dateTimePatterns) {
-    const dateMatch = workHtml.match(pattern);
-    if (dateMatch) {
+    let dateMatch;
+    while ((dateMatch = pattern.exec(workHtml)) !== null) {
       const dateStr = dateMatch[1];
       const parsedDate = new Date(dateStr);
       if (!isNaN(parsedDate.getTime())) {
@@ -493,22 +564,32 @@ function parseWorkFromBlurb(workHtml) {
         break;
       }
     }
+    if (published_date) break;
   }
   
   // Look for text-based dates in the published section
   if (!published_date) {
-    const publishedSection = workHtml.match(/<dd[^>]*class="[^"]*published[^"]*"[^>]*>(.*?)<\/dd>/i);
-    if (publishedSection) {
-      const dateText = publishedSection[1].replace(/<[^>]*>/g, '').trim();
-      const parsedDate = new Date(dateText);
-      if (!isNaN(parsedDate.getTime())) {
-        published_date = parsedDate.toISOString();
-        console.log(`Found text date: ${dateText} -> ${published_date}`);
+    const publishedSectionPatterns = [
+      /<dd[^>]*class="[^"]*published[^"]*"[^>]*>(.*?)<\/dd>/i,
+      /<span[^>]*class="[^"]*published[^"]*"[^>]*>(.*?)<\/span>/i,
+      /<div[^>]*class="[^"]*published[^"]*"[^>]*>(.*?)<\/div>/i
+    ];
+    
+    for (const publishedSectionPattern of publishedSectionPatterns) {
+      const publishedSection = workHtml.match(publishedSectionPattern);
+      if (publishedSection) {
+        const dateText = publishedSection[1].replace(/<[^>]*>/g, '').trim();
+        const parsedDate = new Date(dateText);
+        if (!isNaN(parsedDate.getTime())) {
+          published_date = parsedDate.toISOString();
+          console.log(`Found text date: ${dateText} -> ${published_date}`);
+          break;
+        }
       }
     }
   }
   
-  // Look for any date pattern in the stats section
+  // Look for any date pattern in the entire work blurb
   if (!published_date) {
     const datePatterns = [
       /(\d{4}-\d{2}-\d{2})/,
@@ -551,9 +632,11 @@ function parseWorkFromBlurb(workHtml) {
   console.log(`Successfully created work object for: "${title}"`);
   console.log(`- Author: ${author}`);
   console.log(`- Published: ${published_date}`);
-  console.log(`- Tags: ${tags.join(', ')}`);
+  console.log(`- Tags: ${tags.length} found`);
   console.log(`- Description: ${description ? description.substring(0, 100) + '...' : 'None'}`);
   console.log(`- Rating: ${rating || 'None'}`);
+  console.log(`- Word count: ${word_count || 'None'}`);
+  console.log(`- Chapters: ${chapters || 'None'}`);
   
   return result;
 }

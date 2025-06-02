@@ -28,6 +28,8 @@ class CinderellaBoyRSSFeed {
         add_action('wp_enqueue_scripts', array($this, 'enqueue_scripts'));
         add_action('wp_ajax_refresh_feed', array($this, 'ajax_refresh_feed'));
         add_action('wp_ajax_nopriv_refresh_feed', array($this, 'ajax_refresh_feed'));
+        add_action('wp_ajax_load_more_posts', array($this, 'ajax_load_more_posts'));
+        add_action('wp_ajax_nopriv_load_more_posts', array($this, 'ajax_load_more_posts'));
     }
     
     public function init() {
@@ -61,21 +63,47 @@ class CinderellaBoyRSSFeed {
             'limit' => 10,
             'show_description' => 'true',
             'show_tags' => 'true',
-            'show_stats' => 'true'
+            'show_stats' => 'true',
+            'show_header' => 'true',
+            'show_refresh' => 'true',
+            'pagination' => 'true',
+            'per_page' => 10,
+            'page' => 1
         ), $atts);
         
-        $feed_items = $this->fetch_feed_items($atts['limit']);
+        $page = intval($atts['page']);
+        $per_page = intval($atts['per_page']);
+        $offset = ($page - 1) * $per_page;
+        
+        $feed_items = $this->fetch_feed_items($atts['limit'], $offset);
+        $total_items = $this->get_total_items_count();
+        $total_pages = ceil($total_items / $per_page);
+        
+        // Generate unique ID for this instance
+        $instance_id = 'cb-feed-' . wp_rand(1000, 9999);
         
         ob_start();
         ?>
-        <div id="cinderella-boy-feed" class="cb-feed-container">
+        <div id="<?php echo $instance_id; ?>" class="cb-feed-container" 
+             data-show-header="<?php echo esc_attr($atts['show_header']); ?>"
+             data-show-refresh="<?php echo esc_attr($atts['show_refresh']); ?>"
+             data-pagination="<?php echo esc_attr($atts['pagination']); ?>"
+             data-per-page="<?php echo esc_attr($per_page); ?>"
+             data-current-page="<?php echo esc_attr($page); ?>"
+             data-total-pages="<?php echo esc_attr($total_pages); ?>">
+            
+            <?php if ($atts['show_header'] === 'true'): ?>
             <div class="cb-feed-header">
                 <h3>Latest Cinderella Boy Fanfiction</h3>
-                <button id="cb-refresh-btn" class="cb-refresh-btn">
+                <?php if ($atts['show_refresh'] === 'true'): ?>
+                <button class="cb-refresh-btn" data-target="<?php echo $instance_id; ?>">
                     <span class="cb-refresh-icon">↻</span> Refresh
                 </button>
+                <?php endif; ?>
             </div>
-            <div id="cb-feed-content" class="cb-feed-content">
+            <?php endif; ?>
+            
+            <div class="cb-feed-content">
                 <?php if ($feed_items && !empty($feed_items)): ?>
                     <?php foreach ($feed_items as $item): ?>
                         <div class="cb-feed-item">
@@ -132,9 +160,30 @@ class CinderellaBoyRSSFeed {
                             <?php endif; ?>
                         </div>
                     <?php endforeach; ?>
+                    
+                    <?php if ($atts['pagination'] === 'true' && $total_pages > 1): ?>
+                        <div class="cb-pagination">
+                            <?php if ($page > 1): ?>
+                                <button class="cb-page-btn" data-page="<?php echo $page - 1; ?>" data-target="<?php echo $instance_id; ?>">
+                                    ← Previous
+                                </button>
+                            <?php endif; ?>
+                            
+                            <span class="cb-page-info">
+                                Page <?php echo $page; ?> of <?php echo $total_pages; ?>
+                            </span>
+                            
+                            <?php if ($page < $total_pages): ?>
+                                <button class="cb-page-btn" data-page="<?php echo $page + 1; ?>" data-target="<?php echo $instance_id; ?>">
+                                    Next →
+                                </button>
+                            <?php endif; ?>
+                        </div>
+                    <?php endif; ?>
+                    
                 <?php else: ?>
                     <div class="cb-no-items">
-                        <p>No fanfiction works found. <a href="#" id="cb-load-feed">Load feed</a></p>
+                        <p>No fanfiction works found. <a href="#" class="cb-load-feed" data-target="<?php echo $instance_id; ?>">Load feed</a></p>
                     </div>
                 <?php endif; ?>
             </div>
@@ -143,15 +192,15 @@ class CinderellaBoyRSSFeed {
         return ob_get_clean();
     }
     
-    private function fetch_feed_items($limit = 10) {
-        $transient_key = 'cb_feed_items_' . $limit;
+    private function fetch_feed_items($limit = 10, $offset = 0) {
+        $transient_key = 'cb_feed_items_' . $limit . '_' . $offset;
         $cached_items = get_transient($transient_key);
         
         if ($cached_items !== false) {
             return $cached_items;
         }
         
-        $url = $this->supabase_url . '/rest/v1/rss_items?select=*&order=published_date.desc&limit=' . intval($limit);
+        $url = $this->supabase_url . '/rest/v1/rss_items?select=*&order=published_date.desc&limit=' . intval($limit) . '&offset=' . intval($offset);
         
         $response = wp_remote_get($url, array(
             'headers' => array(
@@ -179,13 +228,45 @@ class CinderellaBoyRSSFeed {
         return $items;
     }
     
+    private function get_total_items_count() {
+        $transient_key = 'cb_total_items_count';
+        $cached_count = get_transient($transient_key);
+        
+        if ($cached_count !== false) {
+            return intval($cached_count);
+        }
+        
+        $url = $this->supabase_url . '/rest/v1/rss_items?select=count&count=exact';
+        
+        $response = wp_remote_get($url, array(
+            'headers' => array(
+                'apikey' => $this->supabase_anon_key,
+                'Authorization' => 'Bearer ' . $this->supabase_anon_key,
+                'Content-Type' => 'application/json',
+                'Prefer' => 'count=exact'
+            ),
+            'timeout' => 30
+        ));
+        
+        if (is_wp_error($response)) {
+            return 0;
+        }
+        
+        $headers = wp_remote_retrieve_headers($response);
+        $count = isset($headers['content-range']) ? 
+            intval(explode('/', $headers['content-range'])[1]) : 0;
+        
+        // Cache for 30 minutes
+        set_transient($transient_key, $count, 30 * MINUTE_IN_SECONDS);
+        
+        return $count;
+    }
+    
     public function ajax_refresh_feed() {
         check_ajax_referer('cb_feed_nonce', 'nonce');
         
-        // Clear cache
-        delete_transient('cb_feed_items_10');
-        delete_transient('cb_feed_items_20');
-        delete_transient('cb_feed_items_50');
+        // Clear all cache
+        $this->clear_all_cache();
         
         // Trigger refresh on Supabase
         $refresh_url = $this->supabase_url . '/functions/v1/fetch-ao3-feed';
@@ -202,13 +283,36 @@ class CinderellaBoyRSSFeed {
             return;
         }
         
-        // Fetch fresh items
-        $fresh_items = $this->fetch_feed_items(10);
+        wp_send_json_success(array(
+            'message' => 'Feed refreshed successfully'
+        ));
+    }
+    
+    public function ajax_load_more_posts() {
+        check_ajax_referer('cb_feed_nonce', 'nonce');
+        
+        $page = intval($_POST['page']);
+        $per_page = intval($_POST['per_page']);
+        $offset = ($page - 1) * $per_page;
+        
+        $items = $this->fetch_feed_items($per_page, $offset);
         
         wp_send_json_success(array(
-            'message' => 'Feed refreshed successfully',
-            'items' => $fresh_items
+            'items' => $items,
+            'page' => $page
         ));
+    }
+    
+    private function clear_all_cache() {
+        global $wpdb;
+        
+        // Clear all transients starting with 'cb_feed_items_'
+        $wpdb->query(
+            "DELETE FROM {$wpdb->options} WHERE option_name LIKE '_transient_cb_feed_items_%' OR option_name LIKE '_transient_timeout_cb_feed_items_%'"
+        );
+        
+        // Clear total count cache
+        delete_transient('cb_total_items_count');
     }
 }
 

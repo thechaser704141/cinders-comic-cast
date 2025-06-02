@@ -1,4 +1,3 @@
-
 # Cinderella Boy RSS Feed WordPress Plugin
 
 This WordPress plugin displays the latest Cinderella Boy fanfiction works from Archive of Our Own (AO3) using a Supabase backend.
@@ -8,8 +7,10 @@ This WordPress plugin displays the latest Cinderella Boy fanfiction works from A
 - Display latest fanfiction works with titles, authors, descriptions, tags, and stats
 - Auto-refresh every hour
 - Manual refresh button
+- Pagination support
+- Configurable UI elements (header, refresh button)
 - Responsive design
-- Shortcode support with customizable options
+- Shortcode support with extensive customization options
 - Caching for better performance
 
 ## Installation
@@ -41,28 +42,63 @@ This WordPress plugin displays the latest Cinderella Boy fanfiction works from A
 [cinderella_boy_feed]
 ```
 
-### Shortcode with Options
+### Advanced Shortcode with All Options
 ```
-[cinderella_boy_feed limit="20" show_description="true" show_tags="true" show_stats="true"]
+[cinderella_boy_feed 
+    limit="50" 
+    per_page="10" 
+    page="1"
+    show_description="true" 
+    show_tags="true" 
+    show_stats="true"
+    show_header="true"
+    show_refresh="true"
+    pagination="true"
+]
 ```
 
 ### Shortcode Parameters
 
-- `limit` - Number of items to display (default: 10)
+#### Content Control
+- `limit` - Total number of items to fetch from database (default: 10)
+- `per_page` - Number of items to display per page (default: 10)
+- `page` - Starting page number (default: 1)
+
+#### Display Options
 - `show_description` - Show work descriptions (default: true)
 - `show_tags` - Show work tags (default: true)  
 - `show_stats` - Show word count and chapters (default: true)
 
-### Examples
+#### UI Control
+- `show_header` - Show the "Latest Cinderella Boy Fanfiction" header (default: true)
+- `show_refresh` - Show the manual refresh button (default: true)
+- `pagination` - Enable pagination controls (default: true)
 
-**Show 5 items without descriptions:**
+### Usage Examples
+
+**Compact widget for sidebar (few posts, no header):**
 ```
-[cinderella_boy_feed limit="5" show_description="false"]
+[cinderella_boy_feed limit="5" per_page="5" show_header="false" show_refresh="false" pagination="false"]
 ```
 
-**Show 15 items with only titles and stats:**
+**Main page with many posts and pagination:**
+```
+[cinderella_boy_feed limit="100" per_page="20" show_description="true" show_tags="true"]
+```
+
+**Simple list without descriptions or tags:**
 ```
 [cinderella_boy_feed limit="15" show_description="false" show_tags="false"]
+```
+
+**Embedded widget without UI controls:**
+```
+[cinderella_boy_feed limit="10" per_page="5" show_header="false" show_refresh="false"]
+```
+
+**Full-featured page:**
+```
+[cinderella_boy_feed limit="200" per_page="25" show_description="true" show_tags="true" show_stats="true"]
 ```
 
 ## Implementation Steps
@@ -86,6 +122,23 @@ This WordPress plugin displays the latest Cinderella Boy fanfiction works from A
    - Edit any page or post
    - Add the shortcode `[cinderella_boy_feed]` where you want the feed to appear
    - Publish/update the page
+
+## Advanced Configuration
+
+### Pagination Control
+- Use `per_page` to control how many items show before pagination
+- Use `limit` to control the total pool of items available
+- Set `pagination="false"` to disable pagination entirely
+
+### UI Customization
+- Set `show_header="false"` to hide the title and create a cleaner embed
+- Set `show_refresh="false"` to hide the refresh button for automated contexts
+- Combine both for minimal widget-style displays
+
+### Performance Optimization
+- Higher `limit` values will fetch more data but may impact performance
+- Lower `per_page` values create more pages but faster initial load
+- Cache is automatically managed (30 minutes)
 
 ## Customization
 
@@ -116,13 +169,6 @@ The plugin is designed to be easily customizable. You can modify:
 - Auto-refresh occurs every hour
 - Manual refresh is available via the refresh button
 
-## Requirements
-
-- WordPress 5.0 or higher
-- PHP 7.4 or higher
-- Active internet connection
-- jQuery (included with WordPress)
-
 ## Troubleshooting
 
 **Feed not loading:**
@@ -138,3 +184,13 @@ The plugin is designed to be easily customizable. You can modify:
 **Caching issues:**
 - Use the manual refresh button
 - Check if other caching plugins are interfering
+
+**Pagination not working:**
+- Ensure JavaScript is enabled
+- Check for theme conflicts with jQuery
+- Verify the shortcode includes `pagination="true"`
+
+**Too many/few posts showing:**
+- Use `per_page` to control posts per page
+- Use `limit` to control total available posts
+- Check your caching if changes don't appear immediately
