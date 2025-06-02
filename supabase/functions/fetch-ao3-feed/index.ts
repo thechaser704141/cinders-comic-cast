@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -239,76 +238,32 @@ function parseWorksFromHTML(html) {
   try {
     console.log('Starting HTML parsing...');
     
-    // Look for the main work index with more specific patterns
-    const workIndexPattern = /<ol[^>]*class="[^"]*work[^"]*index[^"]*"[^>]*>([\s\S]*?)<\/ol>/i;
-    const workIndexMatch = html.match(workIndexPattern);
+    // Look for work blurbs - these contain all the work information
+    const workBlurbPattern = /<li[^>]*class="[^"]*work[^"]*blurb[^"]*"[^>]*id="work_(\d+)"[^>]*>([\s\S]*?)<\/li>/gi;
+    let workMatch;
+    let matchCount = 0;
     
-    if (workIndexMatch) {
-      console.log('Found work index section');
-      const workIndexHtml = workIndexMatch[1];
+    while ((workMatch = workBlurbPattern.exec(html)) !== null) {
+      matchCount++;
+      const workId = workMatch[1];
+      const workHtml = workMatch[2];
       
-      // Extract individual work items from the index
-      const workItemPattern = /<li[^>]*class="[^"]*work[^"]*blurb[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
-      let workMatch;
-      let matchCount = 0;
+      console.log(`Processing work ID ${workId} (match ${matchCount})`);
       
-      while ((workMatch = workItemPattern.exec(workIndexHtml)) !== null) {
-        matchCount++;
-        console.log(`Processing work match ${matchCount}`);
-        
-        try {
-          const work = parseWorkFromBlurb(workMatch[1]);
-          if (work) {
-            console.log(`Successfully parsed work: "${work.title}" published on ${work.published_date}`);
-            works.push(work);
-          } else {
-            console.log(`Failed to parse work from match ${matchCount}`);
-          }
-        } catch (error) {
-          console.error(`Error parsing individual work ${matchCount}:`, error);
+      try {
+        const work = parseWorkFromBlurb(workHtml, workId);
+        if (work) {
+          console.log(`Successfully parsed work: "${work.title}"`);
+          works.push(work);
+        } else {
+          console.log(`Failed to parse work from match ${matchCount}`);
         }
+      } catch (error) {
+        console.error(`Error parsing individual work ${matchCount}:`, error);
       }
-      
-      console.log(`Found ${matchCount} work matches in index`);
-    } else {
-      console.log('Could not find work index section, trying fallback patterns...');
-      
-      // Fallback: look for individual work blurbs directly
-      const fallbackPattern = /<li[^>]*class="[^"]*work[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
-      let workMatch;
-      let matchCount = 0;
-      
-      while ((workMatch = fallbackPattern.exec(html)) !== null) {
-        matchCount++;
-        console.log(`Processing fallback work match ${matchCount}`);
-        
-        try {
-          const work = parseWorkFromBlurb(workMatch[1]);
-          if (work) {
-            console.log(`Successfully parsed work: "${work.title}" published on ${work.published_date}`);
-            works.push(work);
-          }
-        } catch (error) {
-          console.error(`Error parsing fallback work ${matchCount}:`, error);
-        }
-      }
-      
-      console.log(`Found ${matchCount} works using fallback pattern`);
     }
     
     console.log(`Successfully parsed ${works.length} works from HTML`);
-    
-    // Debug: if no works found, show some sample HTML
-    if (works.length === 0) {
-      console.log('No works found. HTML sample:', html.substring(0, 500));
-      
-      // Check for specific indicators
-      if (html.includes('No works found')) {
-        console.log('AO3 reports no works found for this tag');
-      } else if (html.includes('sign in') || html.includes('log in')) {
-        console.log('May be hitting a login requirement');
-      }
-    }
     
   } catch (error) {
     console.error('Error parsing works from HTML:', error);
@@ -317,136 +272,69 @@ function parseWorksFromHTML(html) {
   return works;
 }
 
-function parseWorkFromBlurb(workHtml) {
-  console.log('Parsing work blurb...');
+function parseWorkFromBlurb(workHtml, workId) {
+  console.log(`Parsing work blurb for work ID: ${workId}`);
   
-  // Look for the work header/heading section first
-  const headingPattern = /<div[^>]*class="[^"]*header[^"]*"[^>]*>([\s\S]*?)<\/div>/i;
-  const headingMatch = workHtml.match(headingPattern);
+  // Extract title and link
+  const titlePattern = /<h4[^>]*class="[^"]*heading[^"]*"[^>]*>[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i;
+  const titleMatch = workHtml.match(titlePattern);
   
-  let titleLink = null;
-  let title = null;
-  
-  if (headingMatch) {
-    const headingHtml = headingMatch[1];
-    
-    // Extract title and link from heading
-    const titleLinkPattern = /<a[^>]+href="([^"]+)"[^>]*>(.*?)<\/a>/i;
-    const titleLinkMatch = headingHtml.match(titleLinkPattern);
-    
-    if (titleLinkMatch) {
-      titleLink = titleLinkMatch[1].startsWith('http') ? titleLinkMatch[1] : 'https://archiveofourown.org' + titleLinkMatch[1];
-      title = titleLinkMatch[2].replace(/<[^>]*>/g, '').trim();
-    }
-  }
-  
-  // Fallback: look for any link that looks like a work link
-  if (!titleLink || !title) {
-    const fallbackTitlePattern = /<a[^>]+href="(\/works\/[^"]+)"[^>]*>(.*?)<\/a>/i;
-    const fallbackMatch = workHtml.match(fallbackTitlePattern);
-    
-    if (fallbackMatch) {
-      titleLink = 'https://archiveofourown.org' + fallbackMatch[1];
-      title = fallbackMatch[2].replace(/<[^>]*>/g, '').trim();
-    }
-  }
-  
-  if (!titleLink || !title) {
+  if (!titleMatch) {
     console.log('Could not find title/link in work blurb');
     return null;
   }
   
+  const titleLink = titleMatch[1].startsWith('http') ? titleMatch[1] : 'https://archiveofourown.org' + titleMatch[1];
+  const title = titleMatch[2].replace(/<[^>]*>/g, '').trim();
+  
   console.log(`Parsing work: "${title}"`);
   
-  // Extract author
+  // Extract author from the byline
   let author = 'Unknown';
-  const authorPatterns = [
-    /<a[^>]+rel="author"[^>]*>(.*?)<\/a>/i,
-    /<a[^>]+href="\/users\/[^"]*"[^>]*>(.*?)<\/a>/i,
-    /by\s+<a[^>]*>(.*?)<\/a>/i
-  ];
+  const bylinePattern = /<h4[^>]*class="[^"]*byline[^"]*"[^>]*>([\s\S]*?)<\/h4>/i;
+  const bylineMatch = workHtml.match(bylinePattern);
   
-  for (const pattern of authorPatterns) {
-    const authorMatch = workHtml.match(pattern);
+  if (bylineMatch) {
+    const authorPattern = /<a[^>]+rel="author"[^>]*>(.*?)<\/a>/i;
+    const authorMatch = bylineMatch[1].match(authorPattern);
     if (authorMatch) {
       author = authorMatch[1].replace(/<[^>]*>/g, '').trim();
-      break;
     }
   }
   
-  // Extract summary/description with improved patterns
+  // Extract description/summary
   let description = '';
-  const summaryPatterns = [
-    /<blockquote[^>]*class="[^"]*summary[^"]*"[^>]*>\s*<p[^>]*>([\s\S]*?)<\/p>\s*<\/blockquote>/i,
-    /<blockquote[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/blockquote>/i,
-    /<div[^>]*class="[^"]*summary[^"]*"[^>]*>\s*<p[^>]*>([\s\S]*?)<\/p>/i,
-    /<div[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<p[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/p>/i
-  ];
+  const summaryPattern = /<blockquote[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/blockquote>/i;
+  const summaryMatch = workHtml.match(summaryPattern);
   
-  for (const pattern of summaryPatterns) {
-    const summaryMatch = workHtml.match(pattern);
-    if (summaryMatch) {
-      description = summaryMatch[1]
-        .replace(/<[^>]*>/g, '') // Remove HTML tags
-        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"') // Decode entities
-        .replace(/\s+/g, ' ') // Normalize whitespace
-        .trim();
-      if (description) {
-        console.log(`Found description: ${description.substring(0, 100)}...`);
-        break;
-      }
-    }
+  if (summaryMatch) {
+    description = summaryMatch[1]
+      .replace(/<p[^>]*>/gi, '')
+      .replace(/<\/p>/gi, ' ')
+      .replace(/<[^>]*>/g, '')
+      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+      .replace(/\s+/g, ' ')
+      .trim();
+    console.log(`Found description: ${description.substring(0, 100)}...`);
   }
   
-  // Extract tags with improved parsing
+  // Extract tags from the tag list
   const tags = [];
+  const tagListPattern = /<ul[^>]*class="[^"]*tags[^"]*"[^>]*>([\s\S]*?)<\/ul>/gi;
+  let tagListMatch;
   
-  // Look for the tags section specifically - try multiple patterns
-  const tagsSectionPatterns = [
-    /<ul[^>]*class="[^"]*tags[^"]*"[^>]*>([\s\S]*?)<\/ul>/gi,
-    /<div[^>]*class="[^"]*tags[^"]*"[^>]*>([\s\S]*?)<\/div>/gi,
-    /<section[^>]*class="[^"]*tags[^"]*"[^>]*>([\s\S]*?)<\/section>/gi
-  ];
-  
-  for (const tagsSectionPattern of tagsSectionPatterns) {
-    let tagsSectionMatch;
-    while ((tagsSectionMatch = tagsSectionPattern.exec(workHtml)) !== null) {
-      console.log('Found tags section');
-      const tagsHtml = tagsSectionMatch[1];
-      
-      // Extract individual tag links with more comprehensive patterns
-      const tagPatterns = [
-        /<a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]*)<\/a>/gi,
-        /<span[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]*)<\/span>/gi,
-        /<li[^>]*class="[^"]*tag[^"]*"[^>]*><a[^>]*>([^<]*)<\/a>/gi,
-        /<li[^>]*><a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]*)<\/a>/gi
-      ];
-      
-      for (const tagPattern of tagPatterns) {
-        let tagMatch;
-        while ((tagMatch = tagPattern.exec(tagsHtml)) !== null) {
-          let tag = tagMatch[1].trim();
-          // Clean up the tag text
-          tag = tag.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
-          
-          // Skip empty tags, main fandom tag, and duplicates
-          if (tag && !tags.includes(tag) && tag !== 'Cinderella Boy - Punko (Webcomic)' && tag.length > 0) {
-            tags.push(tag);
-          }
-        }
-      }
-    }
-  }
-  
-  // If no tags found, try a broader search
-  if (tags.length === 0) {
-    const broadTagPattern = /<a[^>]*href="\/tags\/[^"]*"[^>]*>([^<]+)<\/a>/gi;
+  while ((tagListMatch = tagListPattern.exec(workHtml)) !== null) {
+    const tagListHtml = tagListMatch[1];
+    
+    // Extract individual tags - they are in <li> elements with <a> tags
+    const tagItemPattern = /<li[^>]*class="[^"]*(?:relationships?|characters?|freeforms?|warnings?)[^"]*"[^>]*>[\s\S]*?<a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]+)<\/a>/gi;
     let tagMatch;
-    while ((tagMatch = broadTagPattern.exec(workHtml)) !== null) {
+    
+    while ((tagMatch = tagItemPattern.exec(tagListHtml)) !== null) {
       let tag = tagMatch[1].trim();
       tag = tag.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
       
+      // Skip main fandom tag and duplicates
       if (tag && !tags.includes(tag) && tag !== 'Cinderella Boy - Punko (Webcomic)' && tag.length > 0) {
         tags.push(tag);
       }
@@ -455,162 +343,83 @@ function parseWorkFromBlurb(workHtml) {
   
   console.log(`Found ${tags.length} tags: ${tags.slice(0, 5).join(', ')}${tags.length > 5 ? '...' : ''}`);
   
-  // Extract stats
+  // Extract stats (word count, chapters)
   let word_count = null;
   let chapters = null;
   
-  const statsPatterns = [
-    /<dl[^>]+class="[^"]*stats[^"]*"[^>]*>([\s\S]*?)<\/dl>/i,
-    /<div[^>]+class="[^"]*stats[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<section[^>]+class="[^"]*stats[^"]*"[^>]*>([\s\S]*?)<\/section>/i
-  ];
+  const statsPattern = /<dl[^>]*class="[^"]*stats[^"]*"[^>]*>([\s\S]*?)<\/dl>/i;
+  const statsMatch = workHtml.match(statsPattern);
   
-  for (const statsPattern of statsPatterns) {
-    const statsMatch = workHtml.match(statsPattern);
-    if (statsMatch) {
-      const statsHtml = statsMatch[1];
-      
-      // Word count - try multiple patterns
-      const wordPatterns = [
-        /<dt[^>]*>Words?:<\/dt>\s*<dd[^>]*>([\d,]+)<\/dd>/i,
-        /<span[^>]*class="[^"]*words[^"]*"[^>]*>[\s\S]*?([\d,]+)[\s\S]*?<\/span>/i,
-        /Words?:\s*([\d,]+)/i
-      ];
-      
-      for (const wordPattern of wordPatterns) {
-        const wordMatch = statsHtml.match(wordPattern);
-        if (wordMatch) {
-          word_count = parseInt(wordMatch[1].replace(/,/g, ''));
-          console.log(`Found word count: ${word_count}`);
-          break;
-        }
-      }
-      
-      // Chapters - try multiple patterns
-      const chapterPatterns = [
-        /<dt[^>]*>Chapters?:<\/dt>\s*<dd[^>]*>(\d+(?:\/\d+)?)<\/dd>/i,
-        /<span[^>]*class="[^"]*chapters[^"]*"[^>]*>[\s\S]*?(\d+(?:\/\d+)?)[\s\S]*?<\/span>/i,
-        /Chapters?:\s*(\d+(?:\/\d+)?)/i
-      ];
-      
-      for (const chapterPattern of chapterPatterns) {
-        const chapterMatch = statsHtml.match(chapterPattern);
-        if (chapterMatch) {
-          chapters = chapterMatch[1];
-          console.log(`Found chapters: ${chapters}`);
-          break;
-        }
-      }
-      
-      break; // Found stats section, no need to try other patterns
-    }
-  }
-  
-  // Extract rating from required tags section
-  let rating = null;
-  const requiredTagsPatterns = [
-    /<ul[^>]*class="[^"]*required[^"]*tags[^"]*"[^>]*>([\s\S]*?)<\/ul>/i,
-    /<div[^>]*class="[^"]*required[^"]*tags[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<section[^>]*class="[^"]*required[^"]*tags[^"]*"[^>]*>([\s\S]*?)<\/section>/i
-  ];
-  
-  for (const requiredTagsPattern of requiredTagsPatterns) {
-    const requiredTagsMatch = workHtml.match(requiredTagsPattern);
+  if (statsMatch) {
+    const statsHtml = statsMatch[1];
     
-    if (requiredTagsMatch) {
-      const requiredTagsHtml = requiredTagsMatch[1];
-      const ratingTags = ['General Audiences', 'Teen And Up Audiences', 'Mature', 'Explicit', 'Not Rated'];
-      
-      for (const ratingTag of ratingTags) {
-        if (requiredTagsHtml.includes(ratingTag)) {
-          rating = ratingTag;
-          console.log(`Found rating: ${rating}`);
-          break;
-        }
-      }
-      break;
+    // Word count
+    const wordPattern = /<dt[^>]*>Words?:<\/dt>\s*<dd[^>]*>([\d,]+)<\/dd>/i;
+    const wordMatch = statsHtml.match(wordPattern);
+    if (wordMatch) {
+      word_count = parseInt(wordMatch[1].replace(/,/g, ''));
+      console.log(`Found word count: ${word_count}`);
+    }
+    
+    // Chapters
+    const chapterPattern = /<dt[^>]*>Chapters?:<\/dt>\s*<dd[^>]*>(\d+(?:\/\d+)?)<\/dd>/i;
+    const chapterMatch = statsHtml.match(chapterPattern);
+    if (chapterMatch) {
+      chapters = chapterMatch[1];
+      console.log(`Found chapters: ${chapters}`);
     }
   }
   
-  // If no rating found in required tags, try broader search
-  if (!rating) {
-    const broadRatingPattern = /<span[^>]*class="[^"]*rating[^"]*"[^>]*title="([^"]*)"[^>]*>/i;
-    const broadRatingMatch = workHtml.match(broadRatingPattern);
-    if (broadRatingMatch) {
-      rating = broadRatingMatch[1];
-      console.log(`Found rating via broad search: ${rating}`);
-    }
-  }
+  // Extract rating from required tags
+  let rating = null;
+  const requiredTagsPattern = /<ul[^>]*class="[^"]*required-tags[^"]*"[^>]*>([\s\S]*?)<\/ul>/i;
+  const requiredTagsMatch = workHtml.match(requiredTagsPattern);
   
-  // Extract published date with improved patterns
-  let published_date = null;
-  
-  // Look for datetime attributes in the work - try multiple patterns
-  const dateTimePatterns = [
-    /<time[^>]*datetime="([^"]+)"[^>]*>/gi,
-    /<span[^>]*datetime="([^"]+)"[^>]*>/gi,
-    /<dd[^>]*class="[^"]*published[^"]*"[^>]*datetime="([^"]+)"[^>]*>/gi,
-    /<time[^>]*class="[^"]*datetime[^"]*"[^>]*datetime="([^"]+)"[^>]*>/gi
-  ];
-  
-  for (const pattern of dateTimePatterns) {
-    let dateMatch;
-    while ((dateMatch = pattern.exec(workHtml)) !== null) {
-      const dateStr = dateMatch[1];
-      const parsedDate = new Date(dateStr);
-      if (!isNaN(parsedDate.getTime())) {
-        published_date = parsedDate.toISOString();
-        console.log(`Found published date: ${dateStr} -> ${published_date}`);
+  if (requiredTagsMatch) {
+    const requiredTagsHtml = requiredTagsMatch[1];
+    const ratingTags = ['General Audiences', 'Teen And Up Audiences', 'Mature', 'Explicit', 'Not Rated'];
+    
+    for (const ratingTag of ratingTags) {
+      const ratingPattern = new RegExp(`<span[^>]*class="[^"]*text[^"]*"[^>]*title="${ratingTag}"[^>]*>`, 'i');
+      if (ratingPattern.test(requiredTagsHtml)) {
+        rating = ratingTag;
+        console.log(`Found rating: ${rating}`);
         break;
       }
     }
-    if (published_date) break;
   }
   
-  // Look for text-based dates in the published section
+  // Extract published date - look for datetime in the work blurb
+  let published_date = null;
+  
+  // Look for the date in the top right corner of the work blurb
+  const dateTimePattern = /<p[^>]*class="[^"]*datetime[^"]*"[^>]*>[\s\S]*?<time[^>]*datetime="([^"]+)"[^>]*>/i;
+  const dateTimeMatch = workHtml.match(dateTimePattern);
+  
+  if (dateTimeMatch) {
+    const dateStr = dateTimeMatch[1];
+    const parsedDate = new Date(dateStr);
+    if (!isNaN(parsedDate.getTime())) {
+      published_date = parsedDate.toISOString();
+      console.log(`Found published date: ${dateStr} -> ${published_date}`);
+    }
+  }
+  
+  // Fallback: look for any datetime attribute
   if (!published_date) {
-    const publishedSectionPatterns = [
-      /<dd[^>]*class="[^"]*published[^"]*"[^>]*>(.*?)<\/dd>/i,
-      /<span[^>]*class="[^"]*published[^"]*"[^>]*>(.*?)<\/span>/i,
-      /<div[^>]*class="[^"]*published[^"]*"[^>]*>(.*?)<\/div>/i
-    ];
-    
-    for (const publishedSectionPattern of publishedSectionPatterns) {
-      const publishedSection = workHtml.match(publishedSectionPattern);
-      if (publishedSection) {
-        const dateText = publishedSection[1].replace(/<[^>]*>/g, '').trim();
-        const parsedDate = new Date(dateText);
-        if (!isNaN(parsedDate.getTime())) {
-          published_date = parsedDate.toISOString();
-          console.log(`Found text date: ${dateText} -> ${published_date}`);
-          break;
-        }
+    const fallbackDatePattern = /<time[^>]*datetime="([^"]+)"[^>]*>/i;
+    const fallbackDateMatch = workHtml.match(fallbackDatePattern);
+    if (fallbackDateMatch) {
+      const dateStr = fallbackDateMatch[1];
+      const parsedDate = new Date(dateStr);
+      if (!isNaN(parsedDate.getTime())) {
+        published_date = parsedDate.toISOString();
+        console.log(`Found fallback date: ${dateStr} -> ${published_date}`);
       }
     }
   }
   
-  // Look for any date pattern in the entire work blurb
-  if (!published_date) {
-    const datePatterns = [
-      /(\d{4}-\d{2}-\d{2})/,
-      /(\d{2}\s+\w{3}\s+\d{4})/,
-      /(\w{3}\s+\d{1,2},?\s+\d{4})/
-    ];
-    
-    for (const pattern of datePatterns) {
-      const match = workHtml.match(pattern);
-      if (match) {
-        const parsedDate = new Date(match[1]);
-        if (!isNaN(parsedDate.getTime())) {
-          published_date = parsedDate.toISOString();
-          console.log(`Found date pattern: ${match[1]} -> ${published_date}`);
-          break;
-        }
-      }
-    }
-  }
-  
-  // Fallback to current date if no published date found
+  // Last resort: use current date
   if (!published_date) {
     published_date = new Date().toISOString();
     console.log(`No published date found, using current date: ${published_date}`);
