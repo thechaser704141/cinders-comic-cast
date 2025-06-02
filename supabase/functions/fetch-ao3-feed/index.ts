@@ -227,13 +227,21 @@ function parseIndividualWork(workHtml, workIndex) {
   }
   console.log(`Tags found: ${tags.length} - ${tags.slice(0, 3).join(', ')}`);
   
-  // Extract published date
+  // Extract published date - improved patterns based on AO3 structure
   let published_date = null;
   const datePatterns = [
+    // Pattern for AO3's datetime attribute in p class="datetime"
+    /<p[^>]*class="[^"]*datetime[^"]*"[^>]*>[\s\S]*?datetime="([^"]+)"/i,
+    // Pattern for datetime in any element
+    /datetime="([^"]+)"/i,
+    // Pattern for dd class="published"
     /<dd[^>]*class="[^"]*published[^"]*"[^>]*>([^<]+)<\/dd>/i,
+    // Pattern for date in statistics
+    /<dt[^>]*>Published:<\/dt>\s*<dd[^>]*>([^<]+)<\/dd>/i,
+    // General date patterns
     /Published:\s*([^<\n]+)/i,
     /(\d{4}-\d{2}-\d{2})/i,
-    /(\d{2}\s+\w{3}\s+\d{4})/i
+    /(\d{1,2}\s+\w{3}\s+\d{4})/i
   ];
   
   for (const pattern of datePatterns) {
@@ -241,14 +249,15 @@ function parseIndividualWork(workHtml, workIndex) {
     if (match) {
       try {
         const dateStr = cleanHtmlText(match[1]);
+        console.log(`Trying to parse date: "${dateStr}"`);
         const parsedDate = new Date(dateStr);
         if (!isNaN(parsedDate.getTime())) {
           published_date = parsedDate.toISOString();
-          console.log(`Date found: ${published_date}`);
+          console.log(`Date successfully parsed: ${published_date}`);
           break;
         }
       } catch (e) {
-        console.log(`Date parsing failed: ${e.message}`);
+        console.log(`Date parsing failed for "${match[1]}": ${e.message}`);
       }
     }
   }
@@ -336,7 +345,7 @@ serve(async (req) => {
     // Base URL for Cinderella Boy works
     const baseUrl = 'https://archiveofourown.org/tags/Cinderella%20Boy%20-%20Punko%20(Webcomic)/works';
     
-    console.log('Starting AO3 scraping with enhanced debugging...');
+    console.log('Starting AO3 scraping with enhanced date extraction...');
     
     // Add random delay before starting
     await randomDelay(500, 1500);
