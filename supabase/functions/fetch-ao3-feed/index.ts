@@ -298,9 +298,9 @@ function parseWorkFromBlurb(workHtml, matchId) {
     console.log(`Found author: ${author}`);
   }
   
-  // Extract description/summary - look for summary class
+  // Extract description/summary using the exact pattern you provided
   let description = '';
-  const summaryPattern = /<blockquote[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/blockquote>/i;
+  const summaryPattern = /<blockquote[^>]*class="userstuff summary"[^>]*>([\s\S]*?)<\/blockquote>/i;
   const summaryMatch = workHtml.match(summaryPattern);
   
   if (summaryMatch) {
@@ -311,23 +311,34 @@ function parseWorkFromBlurb(workHtml, matchId) {
       .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
       .replace(/\s+/g, ' ')
       .trim();
-    console.log(`Found description: ${description.substring(0, 100)}...`);
+    
+    // Limit to 180 characters as requested
+    if (description.length > 180) {
+      description = description.substring(0, 180) + '...';
+    }
+    
+    console.log(`Found description: ${description}`);
   }
   
-  // Extract tags - look for freeform and relationship tags
+  // Extract tags using the exact pattern you provided
   const tags = [];
+  const tagsPattern = /<ul[^>]*class="tags commas"[^>]*>([\s\S]*?)<\/ul>/i;
+  const tagsMatch = workHtml.match(tagsPattern);
   
-  // Get all tag links
-  const tagPattern = /<a[^>]*class="tag"[^>]*>([^<]+)<\/a>/gi;
-  let tagMatch;
-  
-  while ((tagMatch = tagPattern.exec(workHtml)) !== null) {
-    const tag = tagMatch[1].trim()
-      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+  if (tagsMatch) {
+    const tagsHtml = tagsMatch[1];
+    // Extract individual tag links
+    const tagPattern = /<a[^>]*class="tag"[^>]*>([^<]+)<\/a>/gi;
+    let tagMatch;
     
-    // Skip the main fandom tag and duplicates
-    if (tag && !tags.includes(tag) && tag !== 'Cinderella Boy - Punko (Webcomic)' && tag.length > 0) {
-      tags.push(tag);
+    while ((tagMatch = tagPattern.exec(tagsHtml)) !== null) {
+      const tag = tagMatch[1].trim()
+        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+      
+      // Skip the main fandom tag and duplicates
+      if (tag && !tags.includes(tag) && tag !== 'Cinderella Boy - Punko (Webcomic)' && tag.length > 0) {
+        tags.push(tag);
+      }
     }
   }
   
@@ -366,29 +377,29 @@ function parseWorkFromBlurb(workHtml, matchId) {
     }
   }
   
-  // Extract date - look for datetime attributes in the work
+  // Extract date using the exact pattern you provided
   let published_date = null;
+  const datePattern = /<p[^>]*class="datetime"[^>]*>([\s\S]*?)<\/p>/i;
+  const dateMatch = workHtml.match(datePattern);
   
-  // Look for any datetime element - published or updated
-  const dateTimePattern = /<time[^>]*datetime="([^"]+)"[^>]*>/gi;
-  let dateMatch;
-  const dates = [];
-  
-  while ((dateMatch = dateTimePattern.exec(workHtml)) !== null) {
-    const dateStr = dateMatch[1];
-    const parsedDate = new Date(dateStr);
-    if (!isNaN(parsedDate.getTime())) {
-      dates.push(parsedDate);
+  if (dateMatch) {
+    const dateHtml = dateMatch[1];
+    // Look for datetime attribute in the datetime HTML
+    const datetimePattern = /datetime="([^"]+)"/i;
+    const datetimeMatch = dateHtml.match(datetimePattern);
+    
+    if (datetimeMatch) {
+      const dateStr = datetimeMatch[1];
+      const parsedDate = new Date(dateStr);
+      if (!isNaN(parsedDate.getTime())) {
+        published_date = parsedDate.toISOString();
+        console.log(`Found date: ${published_date}`);
+      }
     }
   }
   
-  // Use the most recent date (usually the updated date)
-  if (dates.length > 0) {
-    const mostRecentDate = new Date(Math.max(...dates.map(d => d.getTime())));
-    published_date = mostRecentDate.toISOString();
-    console.log(`Found date: ${published_date}`);
-  } else {
-    // Fallback to current date
+  // Fallback to current date if no date found
+  if (!published_date) {
     published_date = new Date().toISOString();
     console.log(`No date found, using current date: ${published_date}`);
   }
