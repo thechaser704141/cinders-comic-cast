@@ -187,8 +187,36 @@ function parseRSSEntry(entryXml, entryIndex) {
   let word_count = null;
   let chapters = null;
   let rating = null;
+  let tags = [];
   
   if (rawContent) {
+    console.log('Raw content preview:', rawContent.substring(0, 200));
+    
+    // Extract tags from the HTML structure
+    // Look for the tag list structure
+    const tagListMatch = rawContent.match(/<ul[^>]*class="tags"[^>]*>([\s\S]*?)<\/ul>/i);
+    if (tagListMatch) {
+      const tagListHtml = tagListMatch[1];
+      console.log('Found tag list HTML');
+      
+      // Extract all <a> tags with class="tag"
+      const tagRegex = /<a[^>]*class="tag"[^>]*>([^<]+)<\/a>/gi;
+      let tagMatch;
+      
+      while ((tagMatch = tagRegex.exec(tagListHtml)) !== null) {
+        const tag = cleanText(tagMatch[1]);
+        if (tag && !tags.includes(tag)) {
+          // Skip certain metadata tags that aren't story tags
+          if (!tag.match(/^(General Audiences|Teen And Up Audiences|Mature|Explicit|Not Rated|No Archive Warnings Apply|Graphic Depictions Of Violence|Major Character Death|Rape\/Non-Con|Underage|F\/F|F\/M|M\/M|Gen|Multi|Other)$/)) {
+            tags.push(tag);
+            console.log(`Found story tag: ${tag}`);
+          } else {
+            console.log(`Skipped metadata tag: ${tag}`);
+          }
+        }
+      }
+    }
+    
     // Clean up HTML tags first
     const cleanContent = rawContent.replace(/<[^>]*>/g, '').trim();
     
@@ -238,36 +266,8 @@ function parseRSSEntry(entryXml, entryIndex) {
   console.log(`Word count: ${word_count}`);
   console.log(`Chapters: ${chapters}`);
   console.log(`Rating: ${rating}`);
-  
-  // Extract ALL tags/categories from XML - get every single tag without filtering
-  const tags = [];
-  
-  // Method 1: Extract from category term attributes
-  const categoryRegex = /<category[^>]*term="([^"]*)"[^>]*>/gi;
-  let categoryMatch;
-  
-  while ((categoryMatch = categoryRegex.exec(entryXml)) !== null) {
-    const tag = cleanText(categoryMatch[1]);
-    if (tag && !tags.includes(tag)) {
-      tags.push(tag);
-      console.log(`Found tag (term): ${tag}`);
-    }
-  }
-  
-  // Method 2: Extract from category text content
-  const categoryTextRegex = /<category[^>]*>([^<]+)<\/category>/gi;
-  let categoryTextMatch;
-  
-  while ((categoryTextMatch = categoryTextRegex.exec(entryXml)) !== null) {
-    const tag = cleanText(categoryTextMatch[1]);
-    if (tag && !tags.includes(tag)) {
-      tags.push(tag);
-      console.log(`Found tag (text): ${tag}`);
-    }
-  }
-  
-  console.log(`Total tags found: ${tags.length}`);
-  console.log(`All tags: ${tags.join(', ')}`);
+  console.log(`Total story tags found: ${tags.length}`);
+  console.log(`Story tags: ${tags.join(', ')}`);
   
   const result = {
     title,
