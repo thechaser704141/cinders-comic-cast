@@ -60,12 +60,12 @@ export const RSSFeedItem = ({ item }: RSSFeedItemProps) => {
     
     return (
       <div className="mb-3">
-        <div className="flex items-center gap-1 mb-2">
-          {icon}
-          <span className="text-sm font-medium text-gray-600">{title}:</span>
-          <span className="text-xs text-gray-500 italic">{description}</span>
-        </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1">
+            {icon}
+            <span className="text-sm font-medium text-gray-600">{title}:</span>
+            <span className="text-xs text-gray-500 italic">{description}</span>
+          </div>
           {displayedTags.map((tag, index) => (
             <Badge key={index} variant="secondary" className="text-xs px-2 py-1">
               {tag}
