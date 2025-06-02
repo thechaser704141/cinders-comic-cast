@@ -42,6 +42,7 @@ export type Database = {
       rss_items: {
         Row: {
           author: string | null
+          categories: string[] | null
           chapters: string | null
           created_at: string
           description: string | null
@@ -57,6 +58,7 @@ export type Database = {
         }
         Insert: {
           author?: string | null
+          categories?: string[] | null
           chapters?: string | null
           created_at?: string
           description?: string | null
@@ -72,6 +74,7 @@ export type Database = {
         }
         Update: {
           author?: string | null
+          categories?: string[] | null
           chapters?: string | null
           created_at?: string
           description?: string | null
