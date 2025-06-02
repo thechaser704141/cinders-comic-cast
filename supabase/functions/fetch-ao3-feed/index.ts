@@ -96,31 +96,12 @@ function parseIndividualWork(workHtml, workIndex) {
   const author = authorMatch ? authorMatch[1].trim() : null;
   console.log(`Author: ${author || 'Unknown'}`);
   
-  // Extract description - Try multiple patterns based on AO3's actual structure
+  // Extract description from <blockquote class="userstuff summary">
   let description = null;
-  console.log('Searching for description...');
+  console.log('Searching for description in blockquote...');
   
-  // Try the exact class first
-  let descRegex = /<blockquote[^>]*class="userstuff summary"[^>]*>([\s\S]*?)<\/blockquote>/i;
-  let descMatch = workHtml.match(descRegex);
-  
-  if (!descMatch) {
-    // Try any blockquote with summary
-    descRegex = /<blockquote[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/blockquote>/i;
-    descMatch = workHtml.match(descRegex);
-  }
-  
-  if (!descMatch) {
-    // Try any blockquote with userstuff
-    descRegex = /<blockquote[^>]*class="[^"]*userstuff[^"]*"[^>]*>([\s\S]*?)<\/blockquote>/i;
-    descMatch = workHtml.match(descRegex);
-  }
-  
-  if (!descMatch) {
-    // Try any blockquote at all
-    descRegex = /<blockquote[^>]*>([\s\S]*?)<\/blockquote>/i;
-    descMatch = workHtml.match(descRegex);
-  }
+  const descRegex = /<blockquote[^>]*class="userstuff summary"[^>]*>([\s\S]*?)<\/blockquote>/i;
+  const descMatch = workHtml.match(descRegex);
   
   if (descMatch) {
     console.log('Found description!');
@@ -139,71 +120,49 @@ function parseIndividualWork(workHtml, workIndex) {
     }
     console.log(`Description: "${description}"`);
   } else {
-    console.log('No description found with any pattern');
+    console.log('No description found in blockquote class="userstuff summary"');
   }
   
-  // Extract tags - Try multiple patterns
+  // Extract tags from <ul class="tags commas"> looking for all <li> items
   const tags = [];
-  console.log('Searching for tags...');
+  console.log('Searching for tags in ul class="tags commas"...');
   
-  // Try exact class first
-  let tagSectionRegex = /<ul[^>]*class="tags commas"[^>]*>([\s\S]*?)<\/ul>/i;
-  let tagSectionMatch = workHtml.match(tagSectionRegex);
-  
-  if (!tagSectionMatch) {
-    // Try any ul with tags
-    tagSectionRegex = /<ul[^>]*class="[^"]*tags[^"]*"[^>]*>([\s\S]*?)<\/ul>/i;
-    tagSectionMatch = workHtml.match(tagSectionRegex);
-  }
-  
-  if (!tagSectionMatch) {
-    // Try required-tags which seems to exist
-    tagSectionRegex = /<ul[^>]*class="required-tags"[^>]*>([\s\S]*?)<\/ul>/i;
-    tagSectionMatch = workHtml.match(tagSectionRegex);
-  }
+  const tagSectionRegex = /<ul[^>]*class="tags commas"[^>]*>([\s\S]*?)<\/ul>/i;
+  const tagSectionMatch = workHtml.match(tagSectionRegex);
   
   if (tagSectionMatch) {
     console.log('Found tags section!');
     const tagSection = tagSectionMatch[1];
-    const tagRegex = /<a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]+)<\/a>/gi;
-    let tagMatch;
     
-    while ((tagMatch = tagRegex.exec(tagSection)) !== null) {
-      const tag = tagMatch[1].trim();
-      if (tag && tag !== 'Cinderella Boy - Punko (Webcomic)' && !tags.includes(tag)) {
-        tags.push(tag);
+    // Look for all <li> items in this section
+    const liRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
+    let liMatch;
+    
+    while ((liMatch = liRegex.exec(tagSection)) !== null) {
+      const liContent = liMatch[1];
+      
+      // Extract text from any <a> tag within the <li>
+      const linkRegex = /<a[^>]*>([^<]+)<\/a>/i;
+      const linkMatch = liContent.match(linkRegex);
+      
+      if (linkMatch) {
+        const tag = linkMatch[1].trim();
+        if (tag && tag !== 'Cinderella Boy - Punko (Webcomic)' && !tags.includes(tag)) {
+          tags.push(tag);
+        }
       }
     }
-    console.log(`Found ${tags.length} tags: ${tags.slice(0, 3).join(', ')}${tags.length > 3 ? '...' : ''}`);
+    console.log(`Found ${tags.length} tags: ${tags.slice(0, 5).join(', ')}${tags.length > 5 ? '...' : ''}`);
   } else {
-    console.log('No tags found with any pattern');
+    console.log('No tags found in ul class="tags commas"');
   }
   
-  // Extract date - Try multiple patterns
+  // Extract date from <p class="datetime">
   let published_date = null;
-  console.log('Searching for date...');
+  console.log('Searching for date in p class="datetime"...');
   
-  // Try exact class first
-  let dateRegex = /<p[^>]*class="datetime"[^>]*>([^<]+)<\/p>/i;
-  let dateMatch = workHtml.match(dateRegex);
-  
-  if (!dateMatch) {
-    // Try any p with datetime
-    dateRegex = /<p[^>]*class="[^"]*datetime[^"]*"[^>]*>([^<]+)<\/p>/i;
-    dateMatch = workHtml.match(dateRegex);
-  }
-  
-  if (!dateMatch) {
-    // Look for any date-like content in dd elements (stats section)
-    dateRegex = /<dd[^>]*>([^<]*\d{1,2}\s+\w+\s+\d{4}[^<]*)<\/dd>/i;
-    dateMatch = workHtml.match(dateRegex);
-  }
-  
-  if (!dateMatch) {
-    // Look for date patterns anywhere in the work
-    dateRegex = /(\d{1,2}\s+\w+\s+\d{4})/i;
-    dateMatch = workHtml.match(dateRegex);
-  }
+  const dateRegex = /<p[^>]*class="datetime"[^>]*>([^<]+)<\/p>/i;
+  const dateMatch = workHtml.match(dateRegex);
   
   if (dateMatch) {
     console.log('Found date!');
@@ -221,7 +180,7 @@ function parseIndividualWork(workHtml, workIndex) {
       console.log(`Date parsing error: ${e.message}`);
     }
   } else {
-    console.log('No date found with any pattern');
+    console.log('No date found in p class="datetime"');
   }
   
   // Extract stats (word count, chapters) from dd elements
