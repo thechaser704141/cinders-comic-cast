@@ -259,7 +259,7 @@ function parseWorksFromHTML(html) {
         try {
           const work = parseWorkFromBlurb(workMatch[1]);
           if (work) {
-            console.log(`Successfully parsed work: "${work.title}"`);
+            console.log(`Successfully parsed work: "${work.title}" published on ${work.published_date}`);
             works.push(work);
           } else {
             console.log(`Failed to parse work from match ${matchCount}`);
@@ -285,7 +285,7 @@ function parseWorksFromHTML(html) {
         try {
           const work = parseWorkFromBlurb(workMatch[1]);
           if (work) {
-            console.log(`Successfully parsed work: "${work.title}"`);
+            console.log(`Successfully parsed work: "${work.title}" published on ${work.published_date}`);
             works.push(work);
           }
         } catch (error) {
@@ -386,17 +386,20 @@ function parseWorkFromBlurb(workHtml) {
     const summaryMatch = workHtml.match(pattern);
     if (summaryMatch) {
       description = summaryMatch[1].replace(/<[^>]*>/g, '').trim();
+      // Clean up common HTML entities
+      description = description.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
       break;
     }
   }
   
-  // Extract tags
+  // Extract tags (excluding the fandom tag we don't want)
   const tags = [];
   const tagPattern = /<a[^>]+class="[^"]*tag[^"]*"[^>]*>(.*?)<\/a>/gi;
   let tagMatch;
   while ((tagMatch = tagPattern.exec(workHtml)) !== null) {
     const tag = tagMatch[1].replace(/<[^>]*>/g, '').trim();
-    if (tag && !tags.includes(tag)) {
+    // Skip the main fandom tag since we don't want it in the display
+    if (tag && !tags.includes(tag) && tag !== 'Cinderella Boy - Punko (Webcomic)') {
       tags.push(tag);
     }
   }
@@ -423,7 +426,7 @@ function parseWorkFromBlurb(workHtml) {
     }
   }
   
-  // Extract rating from tags
+  // Extract rating from tags or dedicated section
   const ratingTags = ['General Audiences', 'Teen And Up Audiences', 'Mature', 'Explicit', 'Not Rated'];
   for (const tag of tags) {
     if (ratingTags.includes(tag)) {
@@ -432,8 +435,56 @@ function parseWorkFromBlurb(workHtml) {
     }
   }
   
-  // Use current timestamp as published date (since we can't reliably extract it from listing)
-  const published_date = new Date().toISOString();
+  // If rating not found in tags, look for it in a dedicated rating section
+  if (!rating) {
+    const ratingMatch = workHtml.match(/<span[^>]*class="[^"]*rating[^"]*"[^>]*>(.*?)<\/span>/i);
+    if (ratingMatch) {
+      const ratingText = ratingMatch[1].replace(/<[^>]*>/g, '').trim();
+      if (ratingTags.includes(ratingText)) {
+        rating = ratingText;
+      }
+    }
+  }
+  
+  // Extract published date - look for datetime attribute in date elements
+  let published_date = null;
+  const datePatterns = [
+    /<time[^>]+datetime="([^"]+)"[^>]*>/i,
+    /<span[^>]*class="[^"]*datetime[^"]*"[^>]*datetime="([^"]+)"[^>]*>/i,
+    /<p[^>]*class="[^"]*datetime[^"]*"[^>]*>(.*?)<\/p>/i
+  ];
+  
+  for (const pattern of datePatterns) {
+    const dateMatch = workHtml.match(pattern);
+    if (dateMatch) {
+      // Try to parse the datetime
+      const dateStr = dateMatch[1];
+      const parsedDate = new Date(dateStr);
+      if (!isNaN(parsedDate.getTime())) {
+        published_date = parsedDate.toISOString();
+        console.log(`Found published date: ${dateStr} -> ${published_date}`);
+        break;
+      }
+    }
+  }
+  
+  // If no datetime found, look for text-based dates
+  if (!published_date) {
+    const textDateMatch = workHtml.match(/(\d{2}\s+\w{3}\s+\d{4})/i);
+    if (textDateMatch) {
+      const parsedDate = new Date(textDateMatch[1]);
+      if (!isNaN(parsedDate.getTime())) {
+        published_date = parsedDate.toISOString();
+        console.log(`Found text date: ${textDateMatch[1]} -> ${published_date}`);
+      }
+    }
+  }
+  
+  // Fallback to current date if no published date found
+  if (!published_date) {
+    published_date = new Date().toISOString();
+    console.log(`No published date found, using current date: ${published_date}`);
+  }
   
   const result = {
     title,
@@ -449,5 +500,10 @@ function parseWorkFromBlurb(workHtml) {
   };
   
   console.log(`Successfully created work object for: "${title}"`);
+  console.log(`- Author: ${author}`);
+  console.log(`- Published: ${published_date}`);
+  console.log(`- Tags: ${tags.join(', ')}`);
+  console.log(`- Description length: ${description?.length || 0}`);
+  
   return result;
 }
