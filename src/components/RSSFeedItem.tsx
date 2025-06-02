@@ -12,6 +12,7 @@ interface RSSFeedItemProps {
     author?: string;
     published_date?: string;
     tags?: string[];
+    categories?: string[];
     word_count?: number;
     chapters?: string;
     rating?: string;
@@ -83,12 +84,21 @@ export const RSSFeedItem = ({ item }: RSSFeedItemProps) => {
             <span>{formatDate(item.published_date)}</span>
           </div>
           
-          {item.rating && (
-            <div className="flex items-center gap-1">
-              <Star className="h-4 w-4" />
-              <span>{item.rating}</span>
-            </div>
-          )}
+          <div className="flex items-center gap-4">
+            {item.rating && (
+              <div className="flex items-center gap-1">
+                <Star className="h-4 w-4" />
+                <span>{item.rating}</span>
+              </div>
+            )}
+            
+            {item.categories && item.categories.length > 0 && (
+              <div className="flex items-center gap-1">
+                <span className="text-gray-500">Categories:</span>
+                <span>{item.categories.join(', ')}</span>
+              </div>
+            )}
+          </div>
         </div>
       </CardHeader>
       

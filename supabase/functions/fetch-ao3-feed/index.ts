@@ -187,19 +187,33 @@ function parseRSSEntry(entryXml, entryIndex) {
   let chapters = null;
   let rating = null;
   let tags = [];
+  let categories = [];
   
   if (rawContent) {
     console.log('Raw content preview:', rawContent.substring(0, 500));
     
-    // Extract tags from the HTML structure - look for all <a> tags with class="tag"
+    // Extract categories - these are relationship types like M/M, F/F, etc.
+    const categoryRegex = /<a[^>]*class="tag"[^>]*>([^<]*(?:\/[^<]*)+)<\/a>/gi;
+    let categoryMatch;
+    
+    while ((categoryMatch = categoryRegex.exec(rawContent)) !== null) {
+      const category = cleanText(categoryMatch[1]);
+      // Categories are typically relationship patterns like M/M, F/F, Gen, etc.
+      if (category && category.match(/^(M\/M|F\/F|F\/M|Gen|Multi|Other)$/i)) {
+        categories.push(category);
+        console.log(`Found category: ${category}`);
+      }
+    }
+    
+    // Extract all other tags from the HTML structure - look for all <a> tags with class="tag"
     const tagRegex = /<a[^>]*class="tag"[^>]*>([^<]+)<\/a>/gi;
     let tagMatch;
     
     while ((tagMatch = tagRegex.exec(rawContent)) !== null) {
       const tag = cleanText(tagMatch[1]);
       if (tag && !tags.includes(tag)) {
-        // Skip basic metadata tags but keep everything else
-        if (!tag.match(/^(General Audiences|Teen And Up Audiences|Mature|Explicit|Not Rated|No Archive Warnings Apply|Graphic Depictions Of Violence|Major Character Death|Rape\/Non-Con|Underage|F\/F|F\/M|M\/M|Gen|Multi|Other|Warnings|Categories|Fandoms|Relationships|Additional Tags)$/i)) {
+        // Skip basic metadata tags and categories (since we handle those separately)
+        if (!tag.match(/^(General Audiences|Teen And Up Audiences|Mature|Explicit|Not Rated|No Archive Warnings Apply|Graphic Depictions Of Violence|Major Character Death|Rape\/Non-Con|Underage|M\/M|F\/F|F\/M|Gen|Multi|Other|Warnings|Categories|Fandoms|Relationships|Additional Tags)$/i)) {
           tags.push(tag);
           console.log(`Found story tag: ${tag}`);
         } else {
@@ -257,6 +271,7 @@ function parseRSSEntry(entryXml, entryIndex) {
   console.log(`Word count: ${word_count}`);
   console.log(`Chapters: ${chapters}`);
   console.log(`Rating: ${rating}`);
+  console.log(`Categories: ${categories.join(', ')}`);
   console.log(`Total story tags found: ${tags.length}`);
   console.log(`Story tags: ${tags.join(', ')}`);
   
@@ -267,6 +282,7 @@ function parseRSSEntry(entryXml, entryIndex) {
     author,
     published_date,
     tags: tags.length > 0 ? tags : null,
+    categories: categories.length > 0 ? categories : null,
     word_count,
     chapters,
     fandom: 'Cinderella Boy - Punko (Webcomic)',
