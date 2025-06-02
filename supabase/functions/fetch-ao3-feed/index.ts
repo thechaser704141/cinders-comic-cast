@@ -296,7 +296,7 @@ function parseIndividualWork(workHtml, workIndex) {
   
   // Extract description from summary blockquote
   let description = null;
-  const descRegex = /<blockquote[^>]*class="userstuff*summary"[^>]*>([^<]+)<\/blockquote>/i;
+  const descRegex = /<blockquote[^>]*class="userstuff summary"[^>]*>([^<]+)<\/blockquote>/i;
   const descMatch = workHtml.match(descRegex);
   
   if (descMatch) {
