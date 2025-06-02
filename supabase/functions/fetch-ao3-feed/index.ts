@@ -134,7 +134,7 @@ function parseIndividualWork(workHtml, workIndex) {
     console.log('No description found');
   }
   
-  // Extract tags from <ul class="tags commas">
+  // Extract tags from <ul class="tags commas"> - using the exact structure provided
   const tags = [];
   console.log('Searching for tags...');
   
@@ -145,12 +145,20 @@ function parseIndividualWork(workHtml, workIndex) {
     console.log('Found tags section!');
     const tagSection = tagSectionMatch[1];
     
-    // Look for all <a> tags within <li> elements
-    const tagRegex = /<li[^>]*>[\s\S]*?<a[^>]*>([^<]+)<\/a>[\s\S]*?<\/li>/gi;
+    // Extract all <a class="tag"> elements
+    const tagRegex = /<a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]+)<\/a>/gi;
     let tagMatch;
     
     while ((tagMatch = tagRegex.exec(tagSection)) !== null) {
-      const tag = tagMatch[1].trim();
+      const tag = tagMatch[1]
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .trim();
+      
+      // Skip the main fandom tag since it's redundant
       if (tag && tag !== 'Cinderella Boy - Punko (Webcomic)' && !tags.includes(tag)) {
         tags.push(tag);
       }
