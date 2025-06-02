@@ -52,7 +52,7 @@ export const RSSFeedItem = ({ item }: RSSFeedItemProps) => {
     ));
   };
 
-  const renderTagSection = (tags: string[] | undefined, title: string, icon: React.ReactNode, limit: number = 4) => {
+  const renderTagSection = (tags: string[] | undefined, title: string, icon: React.ReactNode, limit: number = 4, description: string) => {
     if (!tags || tags.length === 0) return null;
     
     const displayedTags = tags.slice(0, limit);
@@ -63,6 +63,7 @@ export const RSSFeedItem = ({ item }: RSSFeedItemProps) => {
         <div className="flex items-center gap-1 mb-2">
           {icon}
           <span className="text-sm font-medium text-gray-600">{title}:</span>
+          <span className="text-xs text-gray-500 italic">{description}</span>
         </div>
         <div className="flex flex-wrap gap-2">
           {displayedTags.map((tag, index) => (
@@ -181,21 +182,24 @@ export const RSSFeedItem = ({ item }: RSSFeedItemProps) => {
             characters, 
             "Characters", 
             <Users className="h-4 w-4" />, 
-            4
+            4,
+            "Main and supporting characters in the story"
           )}
           
           {renderTagSection(
             relationships, 
             "Relationships", 
             <Heart className="h-4 w-4" />, 
-            4
+            4,
+            "Romantic and platonic relationships featured"
           )}
           
           {renderTagSection(
             additional_tags, 
             "Additional Tags", 
             <Tag className="h-4 w-4" />, 
-            4
+            4,
+            "Content warnings, tropes, and other story elements"
           )}
         </div>
       </CardHeader>
