@@ -96,12 +96,14 @@ function parseIndividualWork(workHtml, workIndex) {
   const author = authorMatch ? authorMatch[1].trim() : null;
   console.log(`Author: ${author || 'Unknown'}`);
   
-  // Extract description from exact class: <blockquote class="userstuff summary">
+  // Extract description - EXACT class match
   let description = null;
+  console.log('Searching for description with class "userstuff summary"...');
   const descRegex = /<blockquote[^>]*class="userstuff summary"[^>]*>([\s\S]*?)<\/blockquote>/i;
   const descMatch = workHtml.match(descRegex);
   
   if (descMatch) {
+    console.log('Found description blockquote!');
     description = descMatch[1]
       .replace(/<[^>]*>/g, '') // Remove HTML tags
       .replace(/&amp;/g, '&')
@@ -115,17 +117,26 @@ function parseIndividualWork(workHtml, workIndex) {
     if (description.length > 180) {
       description = description.substring(0, 180) + '...';
     }
-    console.log(`Description: ${description}`);
+    console.log(`Description: "${description}"`);
   } else {
-    console.log('No description found');
+    console.log('No description found - checking for variations...');
+    // Check if there's any blockquote at all
+    const anyBlockquote = workHtml.match(/<blockquote[^>]*>([\s\S]*?)<\/blockquote>/i);
+    if (anyBlockquote) {
+      console.log('Found a blockquote but with different class:', anyBlockquote[0].substring(0, 100));
+    } else {
+      console.log('No blockquote found at all');
+    }
   }
   
-  // Extract tags from exact class: <ul class="tags commas">
+  // Extract tags - EXACT class match
   const tags = [];
+  console.log('Searching for tags with class "tags commas"...');
   const tagSectionRegex = /<ul[^>]*class="tags commas"[^>]*>([\s\S]*?)<\/ul>/i;
   const tagSectionMatch = workHtml.match(tagSectionRegex);
   
   if (tagSectionMatch) {
+    console.log('Found tags ul!');
     const tagSection = tagSectionMatch[1];
     const tagRegex = /<a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]+)<\/a>/gi;
     let tagMatch;
@@ -136,15 +147,26 @@ function parseIndividualWork(workHtml, workIndex) {
         tags.push(tag);
       }
     }
+    console.log(`Found ${tags.length} tags: ${tags.slice(0, 3).join(', ')}${tags.length > 3 ? '...' : ''}`);
+  } else {
+    console.log('No tags ul found - checking for variations...');
+    // Check if there's any ul with tags
+    const anyTagsUl = workHtml.match(/<ul[^>]*class="[^"]*tags[^"]*"[^>]*>/i);
+    if (anyTagsUl) {
+      console.log('Found a tags ul but with different class:', anyTagsUl[0]);
+    } else {
+      console.log('No tags ul found at all');
+    }
   }
-  console.log(`Found ${tags.length} tags: ${tags.slice(0, 3).join(', ')}${tags.length > 3 ? '...' : ''}`);
   
-  // Extract published date from exact class: <p class="datetime">
+  // Extract date - EXACT class match
   let published_date = null;
+  console.log('Searching for date with class "datetime"...');
   const dateRegex = /<p[^>]*class="datetime"[^>]*>([^<]+)<\/p>/i;
   const dateMatch = workHtml.match(dateRegex);
   
   if (dateMatch) {
+    console.log('Found datetime p!');
     const dateStr = dateMatch[1].trim();
     console.log(`Raw date string: "${dateStr}"`);
     try {
@@ -159,7 +181,20 @@ function parseIndividualWork(workHtml, workIndex) {
       console.log(`Date parsing error: ${e.message}`);
     }
   } else {
-    console.log('No date found');
+    console.log('No datetime p found - checking for variations...');
+    // Check if there's any p with datetime
+    const anyDatetimeP = workHtml.match(/<p[^>]*class="[^"]*datetime[^"]*"[^>]*>/i);
+    if (anyDatetimeP) {
+      console.log('Found a datetime p but with different class:', anyDatetimeP[0]);
+    } else {
+      console.log('No datetime p found at all');
+      
+      // Let's see what p tags exist
+      const allPTags = workHtml.match(/<p[^>]*class="[^"]*"[^>]*>/gi);
+      if (allPTags) {
+        console.log('Found p tags with classes:', allPTags.slice(0, 3));
+      }
+    }
   }
   
   // Extract stats (word count, chapters) from dd elements
@@ -199,6 +234,13 @@ function parseIndividualWork(workHtml, workIndex) {
       console.log(`Rating: ${rating}`);
       break;
     }
+  }
+  
+  // Log a sample of the HTML for the first work to see the structure
+  if (workIndex === 1) {
+    console.log('=== SAMPLE HTML (first 2000 chars) ===');
+    console.log(workHtml.substring(0, 2000));
+    console.log('=== END SAMPLE HTML ===');
   }
   
   const result = {
