@@ -1,3 +1,4 @@
+
 <?php
 /**
  * Plugin Name: Cinderella Boy RSS Feed
@@ -228,14 +229,42 @@ class CinderellaBoyRSSFeed {
     }
     
     private function categorize_tags($item) {
-        // If we have the new categorized columns and they have data, use them
-        if ((isset($item['characters']) && !empty($item['characters'])) || 
-            (isset($item['relationships']) && !empty($item['relationships'])) || 
-            (isset($item['additional_tags']) && !empty($item['additional_tags']))) {
+        // First, try to get categorized tags from the new columns
+        $characters = array();
+        $relationships = array();
+        $additional_tags = array();
+        
+        // Check if we have data in the new categorized columns
+        if (isset($item['characters']) && !empty($item['characters'])) {
+            if (is_string($item['characters'])) {
+                $characters = json_decode($item['characters'], true) ?: array();
+            } elseif (is_array($item['characters'])) {
+                $characters = $item['characters'];
+            }
+        }
+        
+        if (isset($item['relationships']) && !empty($item['relationships'])) {
+            if (is_string($item['relationships'])) {
+                $relationships = json_decode($item['relationships'], true) ?: array();
+            } elseif (is_array($item['relationships'])) {
+                $relationships = $item['relationships'];
+            }
+        }
+        
+        if (isset($item['additional_tags']) && !empty($item['additional_tags'])) {
+            if (is_string($item['additional_tags'])) {
+                $additional_tags = json_decode($item['additional_tags'], true) ?: array();
+            } elseif (is_array($item['additional_tags'])) {
+                $additional_tags = $item['additional_tags'];
+            }
+        }
+        
+        // If we have data in the new columns, use it
+        if (!empty($characters) || !empty($relationships) || !empty($additional_tags)) {
             return array(
-                'characters' => $item['characters'] ?? array(),
-                'relationships' => $item['relationships'] ?? array(),
-                'additional_tags' => $item['additional_tags'] ?? array()
+                'characters' => $characters,
+                'relationships' => $relationships,
+                'additional_tags' => $additional_tags
             );
         }
 
@@ -247,10 +276,6 @@ class CinderellaBoyRSSFeed {
         if (!is_array($tags)) {
             return array('characters' => array(), 'relationships' => array(), 'additional_tags' => array());
         }
-
-        $characters = array();
-        $relationships = array();
-        $additional_tags = array();
 
         foreach ($tags as $tag) {
             // Skip the fandom tag as it's redundant
@@ -281,12 +306,13 @@ class CinderellaBoyRSSFeed {
     }
     
     private function fetch_feed_items($limit = 10, $offset = 0) {
-        $transient_key = 'cb_feed_items_' . $limit . '_' . $offset;
-        $cached_items = get_transient($transient_key);
+        // Don't cache during debugging
+        // $transient_key = 'cb_feed_items_' . $limit . '_' . $offset;
+        // $cached_items = get_transient($transient_key);
         
-        if ($cached_items !== false) {
-            return $cached_items;
-        }
+        // if ($cached_items !== false) {
+        //     return $cached_items;
+        // }
         
         $url = $this->supabase_url . '/rest/v1/rss_items?select=*&order=published_date.desc&limit=' . intval($limit) . '&offset=' . intval($offset);
         
@@ -300,6 +326,7 @@ class CinderellaBoyRSSFeed {
         ));
         
         if (is_wp_error($response)) {
+            error_log('CB Feed Error: ' . $response->get_error_message());
             return array();
         }
         
@@ -307,11 +334,18 @@ class CinderellaBoyRSSFeed {
         $items = json_decode($body, true);
         
         if (!is_array($items)) {
+            error_log('CB Feed Error: Invalid response format');
             return array();
         }
         
-        // Cache for 30 minutes
-        set_transient($transient_key, $items, 30 * MINUTE_IN_SECONDS);
+        // Add debugging
+        error_log('CB Feed Debug: Fetched ' . count($items) . ' items');
+        if (!empty($items)) {
+            error_log('CB Feed Debug: First item structure: ' . print_r($items[0], true));
+        }
+        
+        // Cache for 30 minutes (disabled during debugging)
+        // set_transient($transient_key, $items, 30 * MINUTE_IN_SECONDS);
         
         return $items;
     }
