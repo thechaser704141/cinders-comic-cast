@@ -174,9 +174,6 @@ function parseRSSEntry(entryXml, entryIndex) {
     // Clean up HTML tags first
     const cleanContent = rawContent.replace(/<[^>]*>/g, '').trim();
     
-    // Split content by common patterns to extract different parts
-    // Pattern: "by AuthorDescription here.Words: X, Chapters: Y, ..."
-    
     // Remove the "by Author" part at the beginning if it's there
     let contentWithoutAuthor = cleanContent;
     if (author && cleanContent.startsWith(`by ${author}`)) {
@@ -203,8 +200,8 @@ function parseRSSEntry(entryXml, entryIndex) {
         chapters = chapterMatch[1];
       }
       
-      // Extract rating
-      const ratingMatch = metadata.match(/Rating:\s*([^,\n]+)/i);
+      // Extract rating - just the rating part, not warnings/categories
+      const ratingMatch = metadata.match(/Rating:\s*([^W,\n]+)/i);
       if (ratingMatch) {
         rating = cleanText(ratingMatch[1]);
       }
@@ -224,13 +221,20 @@ function parseRSSEntry(entryXml, entryIndex) {
   console.log(`Chapters: ${chapters}`);
   console.log(`Rating: ${rating}`);
   
-  // Extract tags/categories from XML
+  // Extract tags/categories from XML - these are the actual story tags
   const categoryRegex = /<category[^>]*term="([^"]*)"[^>]*>/gi;
   let categoryMatch;
   
   while ((categoryMatch = categoryRegex.exec(entryXml)) !== null) {
     const tag = cleanText(categoryMatch[1]);
-    if (tag && tag !== 'Cinderella Boy - Punko (Webcomic)' && !tags.includes(tag)) {
+    // Filter out the main fandom since it's already captured separately
+    // Also filter out ratings, warnings, and categories that aren't actual story tags
+    if (tag && 
+        tag !== 'Cinderella Boy - Punko (Webcomic)' && 
+        !tag.match(/^(General Audiences|Teen And Up Audiences|Mature|Explicit|Not Rated)$/i) &&
+        !tag.match(/^(No Archive Warnings Apply|Creator Chose Not To Use Archive Warnings|Graphic Depictions Of Violence|Major Character Death|Rape\/Non-Con|Underage)$/i) &&
+        !tag.match(/^(M\/M|F\/F|F\/M|Gen|Multi|Other)$/i) &&
+        !tags.includes(tag)) {
       tags.push(tag);
     }
   }
@@ -241,7 +245,12 @@ function parseRSSEntry(entryXml, entryIndex) {
   
   while ((categoryTextMatch = categoryTextRegex.exec(entryXml)) !== null) {
     const tag = cleanText(categoryTextMatch[1]);
-    if (tag && tag !== 'Cinderella Boy - Punko (Webcomic)' && !tags.includes(tag)) {
+    if (tag && 
+        tag !== 'Cinderella Boy - Punko (Webcomic)' && 
+        !tag.match(/^(General Audiences|Teen And Up Audiences|Mature|Explicit|Not Rated)$/i) &&
+        !tag.match(/^(No Archive Warnings Apply|Creator Chose Not To Use Archive Warnings|Graphic Depictions Of Violence|Major Character Death|Rape\/Non-Con|Underage)$/i) &&
+        !tag.match(/^(M\/M|F\/F|F\/M|Gen|Multi|Other)$/i) &&
+        !tags.includes(tag)) {
       tags.push(tag);
     }
   }

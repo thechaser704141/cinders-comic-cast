@@ -65,19 +65,6 @@ export const RSSFeedItem = ({ item }: RSSFeedItemProps) => {
             <span>{formatDate(item.published_date)}</span>
           </div>
           
-          {item.word_count && (
-            <div className="flex items-center gap-1">
-              <BookOpen className="h-4 w-4" />
-              <span>{formatWordCount(item.word_count)}</span>
-            </div>
-          )}
-          
-          {item.chapters && (
-            <div className="flex items-center gap-1">
-              <span>{item.chapters} chapters</span>
-            </div>
-          )}
-          
           {item.rating && (
             <div className="flex items-center gap-1">
               <Star className="h-4 w-4" />
@@ -88,14 +75,8 @@ export const RSSFeedItem = ({ item }: RSSFeedItemProps) => {
       </CardHeader>
       
       <CardContent>
-        {item.description && (
-          <p className="text-gray-700 mb-4 line-clamp-3">
-            {item.description}
-          </p>
-        )}
-        
         {item.tags && item.tags.length > 0 && (
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 mb-4">
             {item.tags.slice(0, 8).map((tag, index) => (
               <Badge key={index} variant="secondary" className="text-xs">
                 {tag}
@@ -108,6 +89,27 @@ export const RSSFeedItem = ({ item }: RSSFeedItemProps) => {
             )}
           </div>
         )}
+        
+        {item.description && (
+          <p className="text-gray-700 mb-4 line-clamp-3">
+            {item.description}
+          </p>
+        )}
+        
+        <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+          {item.word_count && (
+            <div className="flex items-center gap-1">
+              <BookOpen className="h-4 w-4" />
+              <span>{formatWordCount(item.word_count)}</span>
+            </div>
+          )}
+          
+          {item.chapters && (
+            <div className="flex items-center gap-1">
+              <span>{item.chapters} chapters</span>
+            </div>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
