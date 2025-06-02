@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -238,20 +239,19 @@ function parseWorksFromHTML(html) {
   try {
     console.log('Starting HTML parsing...');
     
-    // Look for work blurbs - these contain all the work information
-    const workBlurbPattern = /<li[^>]*class="[^"]*work[^"]*blurb[^"]*"[^>]*id="work_(\d+)"[^>]*>([\s\S]*?)<\/li>/gi;
+    // Updated pattern to match AO3's actual work structure
+    const workBlurbPattern = /<li[^>]*class="[^"]*work[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
     let workMatch;
     let matchCount = 0;
     
     while ((workMatch = workBlurbPattern.exec(html)) !== null) {
       matchCount++;
-      const workId = workMatch[1];
-      const workHtml = workMatch[2];
+      const workHtml = workMatch[1];
       
-      console.log(`Processing work ID ${workId} (match ${matchCount})`);
+      console.log(`Processing work match ${matchCount}`);
       
       try {
-        const work = parseWorkFromBlurb(workHtml, workId);
+        const work = parseWorkFromBlurb(workHtml, matchCount);
         if (work) {
           console.log(`Successfully parsed work: "${work.title}"`);
           works.push(work);
@@ -272,11 +272,11 @@ function parseWorksFromHTML(html) {
   return works;
 }
 
-function parseWorkFromBlurb(workHtml, workId) {
-  console.log(`Parsing work blurb for work ID: ${workId}`);
+function parseWorkFromBlurb(workHtml, matchId) {
+  console.log(`Parsing work blurb for match ID: ${matchId}`);
   
-  // Extract title and link
-  const titlePattern = /<h4[^>]*class="[^"]*heading[^"]*"[^>]*>[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i;
+  // Extract title and link - look for the main work title
+  const titlePattern = /<h4[^>]*class="heading"[^>]*>[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i;
   const titleMatch = workHtml.match(titlePattern);
   
   if (!titleMatch) {
@@ -291,7 +291,7 @@ function parseWorkFromBlurb(workHtml, workId) {
   
   // Extract author from the byline
   let author = 'Unknown';
-  const bylinePattern = /<h4[^>]*class="[^"]*byline[^"]*"[^>]*>([\s\S]*?)<\/h4>/i;
+  const bylinePattern = /<h4[^>]*class="byline"[^>]*>([\s\S]*?)<\/h4>/i;
   const bylineMatch = workHtml.match(bylinePattern);
   
   if (bylineMatch) {
@@ -302,7 +302,7 @@ function parseWorkFromBlurb(workHtml, workId) {
     }
   }
   
-  // Extract description/summary
+  // Extract description/summary - look for blockquote with class summary
   let description = '';
   const summaryPattern = /<blockquote[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/blockquote>/i;
   const summaryMatch = workHtml.match(summaryPattern);
@@ -318,19 +318,19 @@ function parseWorkFromBlurb(workHtml, workId) {
     console.log(`Found description: ${description.substring(0, 100)}...`);
   }
   
-  // Extract tags from the tag list
+  // Extract tags - look for ul with class tags
   const tags = [];
-  const tagListPattern = /<ul[^>]*class="[^"]*tags[^"]*"[^>]*>([\s\S]*?)<\/ul>/gi;
-  let tagListMatch;
+  const tagListPattern = /<ul[^>]*class="[^"]*tags[^"]*"[^>]*>([\s\S]*?)<\/ul>/i;
+  const tagListMatch = workHtml.match(tagListPattern);
   
-  while ((tagListMatch = tagListPattern.exec(workHtml)) !== null) {
+  if (tagListMatch) {
     const tagListHtml = tagListMatch[1];
     
-    // Extract individual tags - they are in <li> elements with <a> tags
-    const tagItemPattern = /<li[^>]*class="[^"]*(?:relationships?|characters?|freeforms?|warnings?)[^"]*"[^>]*>[\s\S]*?<a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]+)<\/a>/gi;
+    // Extract individual tags from <a> elements with class tag
+    const tagPattern = /<a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]+)<\/a>/gi;
     let tagMatch;
     
-    while ((tagMatch = tagItemPattern.exec(tagListHtml)) !== null) {
+    while ((tagMatch = tagPattern.exec(tagListHtml)) !== null) {
       let tag = tagMatch[1].trim();
       tag = tag.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
       
@@ -343,7 +343,7 @@ function parseWorkFromBlurb(workHtml, workId) {
   
   console.log(`Found ${tags.length} tags: ${tags.slice(0, 5).join(', ')}${tags.length > 5 ? '...' : ''}`);
   
-  // Extract stats (word count, chapters)
+  // Extract stats (word count, chapters) from dl with class stats
   let word_count = null;
   let chapters = null;
   
@@ -380,7 +380,7 @@ function parseWorkFromBlurb(workHtml, workId) {
     const ratingTags = ['General Audiences', 'Teen And Up Audiences', 'Mature', 'Explicit', 'Not Rated'];
     
     for (const ratingTag of ratingTags) {
-      const ratingPattern = new RegExp(`<span[^>]*class="[^"]*text[^"]*"[^>]*title="${ratingTag}"[^>]*>`, 'i');
+      const ratingPattern = new RegExp(`title="${ratingTag}"`, 'i');
       if (ratingPattern.test(requiredTagsHtml)) {
         rating = ratingTag;
         console.log(`Found rating: ${rating}`);
@@ -389,10 +389,10 @@ function parseWorkFromBlurb(workHtml, workId) {
     }
   }
   
-  // Extract published date - look for datetime in the work blurb
+  // Extract published/updated date - look for datetime in the work
   let published_date = null;
   
-  // Look for the date in the top right corner of the work blurb
+  // Look for datetime in the work - updated pattern for AO3's actual structure
   const dateTimePattern = /<p[^>]*class="[^"]*datetime[^"]*"[^>]*>[\s\S]*?<time[^>]*datetime="([^"]+)"[^>]*>/i;
   const dateTimeMatch = workHtml.match(dateTimePattern);
   
