@@ -239,78 +239,81 @@ function parseWorksFromHTML(html) {
   try {
     console.log('Starting HTML parsing...');
     
-    // Use a much simpler and more flexible pattern for work list items
-    const workBlurbPattern = /<li[^>]*class="[^"]*work[^"]*blurb[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
+    // Look for work items in the ol#main list
+    const workListPattern = /<ol[^>]*class="[^"]*work[^"]*index[^"]*"[^>]*>([\s\S]*?)<\/ol>/i;
+    const workListMatch = html.match(workListPattern);
+    
+    if (!workListMatch) {
+      console.log('Could not find work list container');
+      return works;
+    }
+    
+    const workListHtml = workListMatch[1];
+    console.log(`Found work list, length: ${workListHtml.length}`);
+    
+    // Extract individual work items
+    const workItemPattern = /<li[^>]*class="[^"]*work[^"]*blurb[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
     let workMatch;
     let matchCount = 0;
     
-    while ((workMatch = workBlurbPattern.exec(html)) !== null) {
+    while ((workMatch = workItemPattern.exec(workListHtml)) !== null) {
       matchCount++;
       const workHtml = workMatch[1];
       
-      console.log(`Processing work match ${matchCount}`);
+      console.log(`Processing work ${matchCount}, HTML length: ${workHtml.length}`);
       
       try {
-        const work = parseWorkFromBlurb(workHtml, matchCount);
+        const work = parseIndividualWork(workHtml, matchCount);
         if (work) {
           console.log(`Successfully parsed work: "${work.title}"`);
           works.push(work);
-        } else {
-          console.log(`Failed to parse work from match ${matchCount}`);
         }
       } catch (error) {
-        console.error(`Error parsing individual work ${matchCount}:`, error);
+        console.error(`Error parsing work ${matchCount}:`, error);
       }
     }
     
-    console.log(`Successfully parsed ${works.length} works from HTML`);
+    console.log(`Total works parsed: ${works.length}`);
     
   } catch (error) {
-    console.error('Error parsing works from HTML:', error);
+    console.error('Error in parseWorksFromHTML:', error);
   }
   
   return works;
 }
 
-function parseWorkFromBlurb(workHtml, matchId) {
-  console.log(`=== Parsing work blurb ${matchId} ===`);
+function parseIndividualWork(workHtml, workIndex) {
+  console.log(`=== Parsing work ${workIndex} ===`);
   
-  // Extract title and link first
-  const titleLinkPattern = /<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/;
-  const titleMatch = workHtml.match(titleLinkPattern);
+  // Extract title and link
+  const titlePattern = /<h4[^>]*class="[^"]*heading[^"]*"[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/i;
+  const titleMatch = workHtml.match(titlePattern);
   
   if (!titleMatch) {
-    console.log('Could not find title/link in work blurb');
+    console.log(`No title found for work ${workIndex}`);
     return null;
   }
   
   const link = titleMatch[1].startsWith('http') ? titleMatch[1] : 'https://archiveofourown.org' + titleMatch[1];
   const title = titleMatch[2].trim();
   
-  console.log(`Found title: "${title}"`);
-  console.log(`Found link: ${link}`);
+  console.log(`Title: "${title}"`);
+  console.log(`Link: ${link}`);
   
-  // Extract author using simpler pattern
-  let author = 'Unknown';
-  const authorPattern = /by\s*<[^>]*>([^<]+)<\/[^>]*>/i;
+  // Extract author from the byline
+  const authorPattern = /<h4[^>]*class="[^"]*byline[^"]*"[^>]*>[\s\S]*?<a[^>]*>([^<]+)<\/a>/i;
   const authorMatch = workHtml.match(authorPattern);
-  if (authorMatch) {
-    author = authorMatch[1].trim();
-    console.log(`Found author: ${author}`);
-  } else {
-    console.log('No author found');
-  }
+  const author = authorMatch ? authorMatch[1].trim() : 'Unknown';
+  console.log(`Author: ${author}`);
   
   // Extract description from blockquote
-  let description = '';
-  const summaryPattern = /<blockquote[^>]*>([\s\S]*?)<\/blockquote>/i;
-  const summaryMatch = workHtml.match(summaryPattern);
+  const descPattern = /<blockquote[^>]*class="[^"]*userstuff[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/blockquote>/i;
+  const descMatch = workHtml.match(descPattern);
+  let description = null;
   
-  if (summaryMatch) {
-    let rawDesc = summaryMatch[1];
-    // Clean up HTML tags and decode entities
-    description = rawDesc
-      .replace(/<[^>]*>/g, '') // Remove all HTML tags
+  if (descMatch) {
+    description = descMatch[1]
+      .replace(/<[^>]*>/g, '') // Remove HTML tags
       .replace(/&amp;/g, '&')
       .replace(/&lt;/g, '<')
       .replace(/&gt;/g, '>')
@@ -319,99 +322,104 @@ function parseWorkFromBlurb(workHtml, matchId) {
       .replace(/\s+/g, ' ')
       .trim();
     
-    // Limit to 180 characters
     if (description.length > 180) {
       description = description.substring(0, 180) + '...';
     }
-    
-    console.log(`Found description: ${description}`);
+    console.log(`Description: ${description}`);
   } else {
     console.log('No description found');
   }
   
-  // Extract tags from tag list
+  // Extract tags
   const tags = [];
-  const tagListPattern = /<ul[^>]*class="[^"]*tags[^"]*"[^>]*>([\s\S]*?)<\/ul>/i;
-  const tagListMatch = workHtml.match(tagListPattern);
+  const tagSectionPattern = /<ul[^>]*class="[^"]*tags[^"]*"[^>]*>([\s\S]*?)<\/ul>/i;
+  const tagSectionMatch = workHtml.match(tagSectionPattern);
   
-  if (tagListMatch) {
-    const tagHtml = tagListMatch[1];
-    const individualTagPattern = /<a[^>]*>([^<]+)<\/a>/g;
-    let tagMatch;
+  if (tagSectionMatch) {
+    const tagHtml = tagSectionMatch[1];
+    const tagPattern = /<li[^>]*class="[^"]*relationships[^"]*"[^>]*>[\s\S]*?<a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]+)<\/a>|<li[^>]*class="[^"]*characters[^"]*"[^>]*>[\s\S]*?<a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]+)<\/a>|<li[^>]*class="[^"]*freeforms[^"]*"[^>]*>[\s\S]*?<a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]+)<\/a>/gi;
     
-    while ((tagMatch = individualTagPattern.exec(tagHtml)) !== null) {
-      const tag = tagMatch[1].trim();
-      // Skip the main fandom tag
+    let tagMatch;
+    while ((tagMatch = tagPattern.exec(tagHtml)) !== null) {
+      const tag = (tagMatch[1] || tagMatch[2] || tagMatch[3] || '').trim();
       if (tag && tag !== 'Cinderella Boy - Punko (Webcomic)' && !tags.includes(tag)) {
         tags.push(tag);
       }
     }
     console.log(`Found ${tags.length} tags: ${tags.slice(0, 3).join(', ')}${tags.length > 3 ? '...' : ''}`);
   } else {
-    console.log('No tags found');
+    console.log('No tags section found');
+  }
+  
+  // Extract published date
+  let published_date = null;
+  const datePattern = /<p[^>]*class="[^"]*datetime[^"]*"[^>]*>.*?<time[^>]*datetime="([^"]+)"/i;
+  const dateMatch = workHtml.match(datePattern);
+  
+  if (dateMatch) {
+    const dateStr = dateMatch[1];
+    try {
+      const parsedDate = new Date(dateStr);
+      if (!isNaN(parsedDate.getTime())) {
+        published_date = parsedDate.toISOString();
+        console.log(`Date: ${published_date}`);
+      }
+    } catch (e) {
+      console.log(`Invalid date: ${dateStr}`);
+    }
+  } else {
+    console.log('No date found');
   }
   
   // Extract stats (word count, chapters)
   let word_count = null;
   let chapters = null;
   
-  const wordPattern = /Words?:\s*<\/dt>\s*<dd[^>]*>([^<]+)<\/dd>/i;
-  const wordMatch = workHtml.match(wordPattern);
-  if (wordMatch) {
-    const wordStr = wordMatch[1].replace(/,/g, '').trim();
-    word_count = parseInt(wordStr);
-    console.log(`Found word count: ${word_count}`);
-  }
+  const statsPattern = /<dl[^>]*class="[^"]*stats[^"]*"[^>]*>([\s\S]*?)<\/dl>/i;
+  const statsMatch = workHtml.match(statsPattern);
   
-  const chapterPattern = /Chapters?:\s*<\/dt>\s*<dd[^>]*>([^<]+)<\/dd>/i;
-  const chapterMatch = workHtml.match(chapterPattern);
-  if (chapterMatch) {
-    chapters = chapterMatch[1].trim();
-    console.log(`Found chapters: ${chapters}`);
+  if (statsMatch) {
+    const statsHtml = statsMatch[1];
+    
+    // Look for word count
+    const wordPattern = /<dt[^>]*class="[^"]*words[^"]*"[^>]*>.*?<dd[^>]*class="[^"]*words[^"]*"[^>]*>([^<]+)<\/dd>/i;
+    const wordMatch = statsHtml.match(wordPattern);
+    if (wordMatch) {
+      const wordStr = wordMatch[1].replace(/,/g, '').trim();
+      word_count = parseInt(wordStr) || null;
+      console.log(`Word count: ${word_count}`);
+    }
+    
+    // Look for chapters
+    const chapterPattern = /<dt[^>]*class="[^"]*chapters[^"]*"[^>]*>.*?<dd[^>]*class="[^"]*chapters[^"]*"[^>]*>([^<]+)<\/dd>/i;
+    const chapterMatch = statsHtml.match(chapterPattern);
+    if (chapterMatch) {
+      chapters = chapterMatch[1].trim();
+      console.log(`Chapters: ${chapters}`);
+    }
   }
   
   // Extract rating
   let rating = null;
   const ratingPatterns = [
-    /title="General Audiences"/i,
-    /title="Teen And Up Audiences"/i,
-    /title="Mature"/i,
-    /title="Explicit"/i,
-    /title="Not Rated"/i
+    { pattern: /title="General Audiences"/i, name: 'General Audiences' },
+    { pattern: /title="Teen And Up Audiences"/i, name: 'Teen And Up Audiences' },
+    { pattern: /title="Mature"/i, name: 'Mature' },
+    { pattern: /title="Explicit"/i, name: 'Explicit' },
+    { pattern: /title="Not Rated"/i, name: 'Not Rated' }
   ];
   
-  const ratingNames = ['General Audiences', 'Teen And Up Audiences', 'Mature', 'Explicit', 'Not Rated'];
-  
-  for (let i = 0; i < ratingPatterns.length; i++) {
-    if (ratingPatterns[i].test(workHtml)) {
-      rating = ratingNames[i];
-      console.log(`Found rating: ${rating}`);
+  for (const ratingInfo of ratingPatterns) {
+    if (ratingInfo.pattern.test(workHtml)) {
+      rating = ratingInfo.name;
+      console.log(`Rating: ${rating}`);
       break;
     }
   }
   
-  // Extract date - look for datetime attribute
-  let published_date = null;
-  const datePattern = /datetime="([^"]+)"/i;
-  const dateMatch = workHtml.match(datePattern);
-  
-  if (dateMatch) {
-    const dateStr = dateMatch[1];
-    const parsedDate = new Date(dateStr);
-    if (!isNaN(parsedDate.getTime())) {
-      published_date = parsedDate.toISOString();
-      console.log(`Found date: ${published_date}`);
-    } else {
-      console.log(`Invalid date format: ${dateStr}`);
-    }
-  } else {
-    console.log('No date found, using current date');
-    published_date = new Date().toISOString();
-  }
-  
   const result = {
     title,
-    description: description || null,
+    description,
     link,
     author,
     published_date,
@@ -422,7 +430,6 @@ function parseWorkFromBlurb(workHtml, matchId) {
     rating
   };
   
-  console.log(`=== Work parsed successfully ===`);
-  
+  console.log(`=== Work ${workIndex} parsed successfully ===`);
   return result;
 }
