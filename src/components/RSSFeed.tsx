@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -18,7 +17,7 @@ export const RSSFeed = () => {
       const { data, error } = await supabase
         .from('rss_items')
         .select('*')
-        .order('published_date', { ascending: false, nullsLast: true })
+        .order('published_date', { ascending: false })
         .order('updated_at', { ascending: false }); // Secondary sort for items with null published_date
       
       if (error) {
@@ -29,7 +28,22 @@ export const RSSFeed = () => {
       console.log('Fetched RSS items:', data?.length, 'items');
       console.log('Sample item:', data?.[0]);
       
-      return data;
+      // Sort to put items with published_date first, then by published_date desc, then by updated_at desc
+      const sortedData = data?.sort((a, b) => {
+        // Items with published_date come first
+        if (a.published_date && !b.published_date) return -1;
+        if (!a.published_date && b.published_date) return 1;
+        
+        // If both have published_date, sort by published_date desc
+        if (a.published_date && b.published_date) {
+          return new Date(b.published_date).getTime() - new Date(a.published_date).getTime();
+        }
+        
+        // If neither has published_date, sort by updated_at desc
+        return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+      });
+      
+      return sortedData;
     },
     staleTime: 1000 * 60 * 30, // Consider data stale after 30 minutes
     refetchInterval: 1000 * 60 * 60, // Auto-refetch every hour
