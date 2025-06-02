@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -156,26 +155,76 @@ function parseRSSEntry(entryXml, entryIndex) {
     console.log('No date found');
   }
   
-  // Extract description/summary/content
-  let description = getElementText(entryXml, 'summary');
-  if (!description) {
-    description = getElementText(entryXml, 'content');
+  // Extract description/summary/content and parse it properly
+  let rawContent = getElementText(entryXml, 'summary');
+  if (!rawContent) {
+    rawContent = getElementText(entryXml, 'content');
   }
-  if (!description) {
-    description = getElementText(entryXml, 'description');
+  if (!rawContent) {
+    rawContent = getElementText(entryXml, 'description');
   }
   
-  // Clean up description (remove HTML tags if present)
-  if (description) {
-    description = description.replace(/<[^>]*>/g, '').trim();
-    if (description.length > 300) {
+  let description = null;
+  let word_count = null;
+  let chapters = null;
+  let rating = null;
+  let tags = [];
+  
+  if (rawContent) {
+    // Clean up HTML tags first
+    const cleanContent = rawContent.replace(/<[^>]*>/g, '').trim();
+    
+    // Split content by common patterns to extract different parts
+    // Pattern: "by AuthorDescription here.Words: X, Chapters: Y, ..."
+    
+    // Remove the "by Author" part at the beginning if it's there
+    let contentWithoutAuthor = cleanContent;
+    if (author && cleanContent.startsWith(`by ${author}`)) {
+      contentWithoutAuthor = cleanContent.substring(`by ${author}`.length).trim();
+    }
+    
+    // Look for metadata pattern (Words:, Chapters:, etc.)
+    const metadataMatch = contentWithoutAuthor.match(/(.*?)(Words:\s*\d+.*)/i);
+    
+    if (metadataMatch) {
+      // Extract description (everything before metadata)
+      description = cleanText(metadataMatch[1]);
+      const metadata = metadataMatch[2];
+      
+      // Extract word count
+      const wordMatch = metadata.match(/Words:\s*(\d+)/i);
+      if (wordMatch) {
+        word_count = parseInt(wordMatch[1]);
+      }
+      
+      // Extract chapters
+      const chapterMatch = metadata.match(/Chapters:\s*([\d\/\?]+)/i);
+      if (chapterMatch) {
+        chapters = chapterMatch[1];
+      }
+      
+      // Extract rating
+      const ratingMatch = metadata.match(/Rating:\s*([^,\n]+)/i);
+      if (ratingMatch) {
+        rating = cleanText(ratingMatch[1]);
+      }
+    } else {
+      // If no clear metadata pattern, use the whole content as description
+      description = cleanText(contentWithoutAuthor);
+    }
+    
+    // Limit description length
+    if (description && description.length > 300) {
       description = description.substring(0, 300) + '...';
     }
   }
-  console.log(`Description: ${description ? description.substring(0, 50) + '...' : 'None'}`);
   
-  // Extract tags/categories
-  const tags = [];
+  console.log(`Description: ${description ? description.substring(0, 50) + '...' : 'None'}`);
+  console.log(`Word count: ${word_count}`);
+  console.log(`Chapters: ${chapters}`);
+  console.log(`Rating: ${rating}`);
+  
+  // Extract tags/categories from XML
   const categoryRegex = /<category[^>]*term="([^"]*)"[^>]*>/gi;
   let categoryMatch;
   
@@ -198,28 +247,6 @@ function parseRSSEntry(entryXml, entryIndex) {
   }
   
   console.log(`Tags found: ${tags.length} - ${tags.slice(0, 3).join(', ')}`);
-  
-  // Try to extract additional metadata from content if available
-  let word_count = null;
-  let chapters = null;
-  let rating = null;
-  
-  // Look for these in the content or summary
-  const contentForStats = description || '';
-  
-  // Try to extract word count
-  const wordMatch = contentForStats.match(/(\d+)\s*words/i);
-  if (wordMatch) {
-    word_count = parseInt(wordMatch[1]);
-    console.log(`Word count found: ${word_count}`);
-  }
-  
-  // Try to extract chapters
-  const chapterMatch = contentForStats.match(/(\d+\/\d+|\d+)\s*chapters?/i);
-  if (chapterMatch) {
-    chapters = chapterMatch[1];
-    console.log(`Chapters found: ${chapters}`);
-  }
   
   const result = {
     title,
