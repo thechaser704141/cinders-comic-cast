@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -96,20 +97,21 @@ function parseIndividualWork(workHtml, workIndex) {
   const author = authorMatch ? authorMatch[1].trim() : null;
   console.log(`Author: ${author || 'Unknown'}`);
   
-  // Extract description from <blockquote class="userstuff summary"> - EXACT structure
+  // Extract description from blockquote - much more specific pattern
   let description = null;
   console.log('Searching for description...');
   
-  const blockquoteRegex = /<blockquote[^>]*class="[^"]*userstuff[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/blockquote>/i;
+  // Look for the exact blockquote structure
+  const blockquoteRegex = /<blockquote\s+class="userstuff\s+summary"[^>]*>([\s\S]*?)<\/blockquote>/i;
   const blockquoteMatch = workHtml.match(blockquoteRegex);
   
   if (blockquoteMatch) {
-    console.log('Found blockquote description section!');
+    console.log('Found blockquote description!');
     let descContent = blockquoteMatch[1];
     
-    // Remove all HTML tags but keep the text content, including from <p> tags
+    // Clean up the description content
     description = descContent
-      .replace(/<p[^>]*>/gi, ' ') // Replace opening p tags with space
+      .replace(/<p[^>]*>/gi, '') // Remove opening p tags
       .replace(/<\/p>/gi, ' ') // Replace closing p tags with space
       .replace(/<br\s*\/?>/gi, ' ') // Replace br tags with space
       .replace(/<[^>]*>/g, '') // Remove any remaining HTML tags
@@ -124,27 +126,27 @@ function parseIndividualWork(workHtml, workIndex) {
     if (description.length > 200) {
       description = description.substring(0, 200) + '...';
     }
-    console.log(`Parsed description: "${description}"`);
+    console.log(`Found description: "${description}"`);
   } else {
     console.log('No blockquote description found');
   }
   
-  // Extract tags from <ul class="tags commas"> - EXACT structure
+  // Extract tags from ul.tags.commas - exact structure
   const tags = [];
   console.log('Searching for tags...');
   
-  const tagsUlRegex = /<ul[^>]*class="[^"]*tags[^"]*commas[^"]*"[^>]*>([\s\S]*?)<\/ul>/i;
+  const tagsUlRegex = /<ul\s+class="tags\s+commas"[^>]*>([\s\S]*?)<\/ul>/i;
   const tagsUlMatch = workHtml.match(tagsUlRegex);
   
   if (tagsUlMatch) {
-    console.log('Found tags ul section!');
-    const tagsSection = tagsUlMatch[1];
+    console.log('Found tags section!');
+    const tagsContent = tagsUlMatch[1];
     
-    // Extract all <a class="tag"> elements within li elements
-    const tagLinkRegex = /<li[^>]*>[\s\S]*?<a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]+)<\/a>[\s\S]*?<\/li>/gi;
+    // Extract all <a class="tag"> elements
+    const tagRegex = /<a\s+class="tag"[^>]*>([^<]+)<\/a>/gi;
     let tagMatch;
     
-    while ((tagMatch = tagLinkRegex.exec(tagsSection)) !== null) {
+    while ((tagMatch = tagRegex.exec(tagsContent)) !== null) {
       let tag = tagMatch[1]
         .replace(/&amp;/g, '&')
         .replace(/&lt;/g, '<')
@@ -154,7 +156,7 @@ function parseIndividualWork(workHtml, workIndex) {
         .replace(/\*/g, '/') // Handle encoded slashes
         .trim();
       
-      // Skip certain tags and avoid duplicates
+      // Skip the main fandom tag and some common ones
       if (tag && 
           tag !== 'Cinderella Boy - Punko (Webcomic)' && 
           tag !== 'No Archive Warnings Apply' &&
@@ -168,16 +170,15 @@ function parseIndividualWork(workHtml, workIndex) {
     console.log('No tags ul section found');
   }
   
-  // Extract date from <p class="datetime"> that comes after required-tags - EXACT structure
+  // Extract date - look for <p class="datetime"> after required-tags
   let published_date = null;
   console.log('Searching for date...');
   
-  // Look specifically for <p class="datetime"> after required-tags
-  const requiredTagsRegex = /<ul[^>]*class="[^"]*required-tags[^"]*"[^>]*>[\s\S]*?<\/ul>[\s\S]*?<p[^>]*class="[^"]*datetime[^"]*"[^>]*>([^<]+)<\/p>/i;
-  const dateMatch = workHtml.match(requiredTagsRegex);
+  const dateRegex = /<p\s+class="datetime"[^>]*>([^<]+)<\/p>/i;
+  const dateMatch = workHtml.match(dateRegex);
   
   if (dateMatch) {
-    console.log('Found datetime after required-tags!');
+    console.log('Found datetime!');
     const dateStr = dateMatch[1].trim();
     console.log(`Raw date string: "${dateStr}"`);
     try {
@@ -185,30 +186,14 @@ function parseIndividualWork(workHtml, workIndex) {
       if (!isNaN(parsedDate.getTime())) {
         published_date = parsedDate.toISOString();
         console.log(`Parsed date: ${published_date}`);
+      } else {
+        console.log('Date parsing failed - invalid date');
       }
     } catch (e) {
       console.log(`Date parsing error: ${e.message}`);
     }
   } else {
-    // Fallback: look for any <p class="datetime">
-    const fallbackDateRegex = /<p[^>]*class="[^"]*datetime[^"]*"[^>]*>([^<]+)<\/p>/i;
-    const fallbackMatch = workHtml.match(fallbackDateRegex);
-    if (fallbackMatch) {
-      console.log('Found fallback datetime!');
-      const dateStr = fallbackMatch[1].trim();
-      console.log(`Fallback raw date string: "${dateStr}"`);
-      try {
-        const parsedDate = new Date(dateStr);
-        if (!isNaN(parsedDate.getTime())) {
-          published_date = parsedDate.toISOString();
-          console.log(`Fallback parsed date: ${published_date}`);
-        }
-      } catch (e) {
-        console.log(`Fallback date parsing error: ${e.message}`);
-      }
-    } else {
-      console.log('No datetime found');
-    }
+    console.log('No datetime found');
   }
   
   // Extract stats (word count, chapters) - more flexible patterns
