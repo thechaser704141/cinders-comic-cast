@@ -80,6 +80,54 @@ export const RSSFeedItem = ({ item }: RSSFeedItemProps) => {
     );
   };
 
+  // Helper function to categorize old tags if new columns are empty
+  const categorizeTags = () => {
+    // If we have the new categorized columns and they have data, use them
+    if ((item.characters && item.characters.length > 0) || 
+        (item.relationships && item.relationships.length > 0) || 
+        (item.additional_tags && item.additional_tags.length > 0)) {
+      return {
+        characters: item.characters || [],
+        relationships: item.relationships || [],
+        additional_tags: item.additional_tags || []
+      };
+    }
+
+    // Fall back to categorizing the old tags array
+    if (!item.tags || item.tags.length === 0) {
+      return { characters: [], relationships: [], additional_tags: [] };
+    }
+
+    const characters: string[] = [];
+    const relationships: string[] = [];
+    const additional_tags: string[] = [];
+
+    for (const tag of item.tags) {
+      // Skip the fandom tag as it's redundant
+      if (tag === "Cinderella Boy - Punko (Webcomic)") {
+        continue;
+      }
+      
+      // Relationships typically have "/" or "&" in them
+      if (tag.includes('/') || tag.includes(' & ')) {
+        relationships.push(tag);
+      }
+      // Character tags often end with (Cinderella Boy) or are character names
+      else if (tag.includes('(Cinderella Boy)') || 
+               tag.match(/^(Chase|Buddy|Deacon|Silver|Bronze|Goldie|Violet|Prunella|Ralph|Beth|Dale)(\s|$)/)) {
+        characters.push(tag);
+      }
+      // Everything else goes to additional tags
+      else {
+        additional_tags.push(tag);
+      }
+    }
+
+    return { characters, relationships, additional_tags };
+  };
+
+  const { characters, relationships, additional_tags } = categorizeTags();
+
   return (
     <Card className="hover:shadow-lg transition-shadow duration-200">
       <CardHeader>
@@ -153,21 +201,21 @@ export const RSSFeedItem = ({ item }: RSSFeedItemProps) => {
         {/* Categorized Tags */}
         <div className="space-y-3">
           {renderTagSection(
-            item.characters, 
+            characters, 
             "Characters", 
             <Users className="h-4 w-4" />, 
             4
           )}
           
           {renderTagSection(
-            item.relationships, 
+            relationships, 
             "Relationships", 
             <Heart className="h-4 w-4" />, 
             4
           )}
           
           {renderTagSection(
-            item.additional_tags, 
+            additional_tags, 
             "Additional Tags", 
             <Tag className="h-4 w-4" />, 
             4
