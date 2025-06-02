@@ -20,38 +20,27 @@ serve(async (req) => {
 
     console.log('Fetching RSS feed from AO3...')
     
-    // Updated URL to use RSS format instead of Atom
-    const rssUrl = 'https://archiveofourown.org/tags/Cinderella%20Boy%20-%20Punko%20(Webcomic)/works?format=rss'
-    const response = await fetch(rssUrl, {
+    // Use the correct AO3 works feed URL
+    const feedUrl = 'https://archiveofourown.org/tags/Cinderella%20Boy%20-%20Punko%20(Webcomic)/works.atom'
+    console.log('Feed URL:', feedUrl)
+    
+    const response = await fetch(feedUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; FeedReader/1.0)',
-        'Accept': 'application/rss+xml, application/xml, text/xml'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/atom+xml, application/xml, text/xml, */*'
       }
     })
     
     if (!response.ok) {
       console.error(`HTTP Error: ${response.status} - ${response.statusText}`)
-      // Try alternative Atom feed URL if RSS fails
-      const atomUrl = 'https://archiveofourown.org/tags/Cinderella%20Boy%20-%20Punko%20(Webcomic)/works.atom'
-      const atomResponse = await fetch(atomUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; FeedReader/1.0)',
-          'Accept': 'application/atom+xml, application/xml, text/xml'
-        }
-      })
-      
-      if (!atomResponse.ok) {
-        throw new Error(`Failed to fetch both RSS and Atom feeds. RSS: ${response.status}, Atom: ${atomResponse.status}`)
-      }
-      
-      const xmlText = await atomResponse.text()
-      console.log('Atom feed fetched successfully as fallback')
-      return await processAtomFeed(xmlText, supabaseClient)
+      throw new Error(`Failed to fetch feed: ${response.status} ${response.statusText}`)
     }
     
     const xmlText = await response.text()
-    console.log('RSS feed fetched successfully')
-    return await processRSSFeed(xmlText, supabaseClient)
+    console.log('Feed fetched successfully, length:', xmlText.length)
+    console.log('Feed content preview:', xmlText.substring(0, 500))
+    
+    return await processAtomFeed(xmlText, supabaseClient)
     
   } catch (error) {
     console.error('Error processing RSS feed:', error)
@@ -86,6 +75,9 @@ async function processAtomFeed(xmlText: string, supabaseClient: any) {
     const published = entry.getElementsByTagName('published')[0]?.textContent?.trim()
     const summary = entry.getElementsByTagName('summary')[0]?.textContent?.trim()
     
+    console.log(`Processing entry ${i + 1}: ${title}`)
+    console.log('Summary content:', summary?.substring(0, 200) + '...')
+    
     const parsedData = parseSummaryData(summary, title)
     
     // Skip explicit content
@@ -115,62 +107,14 @@ async function processAtomFeed(xmlText: string, supabaseClient: any) {
         updated_at: new Date().toISOString()
       }
       
-      console.log('Final item data:', JSON.stringify(item, null, 2))
-      items.push(item)
-    }
-  }
-  
-  return await saveItemsToDatabase(items, supabaseClient)
-}
-
-async function processRSSFeed(xmlText: string, supabaseClient: any) {
-  const parser = new DOMParser()
-  const xmlDoc = parser.parseFromString(xmlText, 'text/xml')
-  
-  const items_elements = xmlDoc.getElementsByTagName('item')
-  console.log(`Found ${items_elements.length} items in RSS feed`)
-  
-  const items = []
-  
-  for (let i = 0; i < items_elements.length; i++) {
-    const item_element = items_elements[i]
-    
-    const title = item_element.getElementsByTagName('title')[0]?.textContent?.trim()
-    const link = item_element.getElementsByTagName('link')[0]?.textContent?.trim()
-    const author = item_element.getElementsByTagName('dc:creator')[0]?.textContent?.trim()
-    const published = item_element.getElementsByTagName('pubDate')[0]?.textContent?.trim()
-    const description = item_element.getElementsByTagName('description')[0]?.textContent?.trim()
-    
-    const parsedData = parseSummaryData(description, title)
-    
-    // Skip explicit content
-    if (parsedData.rating && parsedData.rating.toLowerCase() === 'explicit') {
-      console.log(`Skipping explicit content: ${title}`)
-      continue
-    }
-    
-    if (title && link) {
-      const item = {
-        id: crypto.randomUUID(),
-        title,
-        description: parsedData.description,
-        link,
-        author,
-        published_date: published ? new Date(published).toISOString() : null,
-        tags: [...parsedData.characters, ...parsedData.relationships, ...parsedData.additionalTags],
-        categories: parsedData.categories,
-        characters: parsedData.characters,
-        relationships: parsedData.relationships,
-        additional_tags: parsedData.additionalTags,
-        word_count: parsedData.wordCount,
-        chapters: parsedData.chapters,
-        fandom: 'Cinderella Boy - Punko (Webcomic)',
-        rating: parsedData.rating,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }
-      
-      console.log('Final item data:', JSON.stringify(item, null, 2))
+      console.log('Parsed item:', {
+        title: item.title,
+        rating: item.rating,
+        categories: item.categories,
+        characters: item.characters,
+        relationships: item.relationships,
+        additional_tags: item.additional_tags
+      })
       items.push(item)
     }
   }
@@ -189,58 +133,79 @@ function parseSummaryData(summary: string, title: string) {
   let description = summary
 
   if (summary) {
-    console.log(`\nProcessing entry: ${title}`)
-    console.log('Summary content:', summary.substring(0, 500) + '...')
+    console.log(`Parsing summary for: ${title}`)
     
     try {
-      // Extract categories (F/F, M/M, etc.)
-      const categoriesMatch = summary.match(/Categories:\s*((?:<a[^>]*>[^<]+<\/a>(?:,\s*)?)+)/i)
-      if (categoriesMatch) {
-        const categoryMatches = categoriesMatch[1].matchAll(/<a[^>]*>([^<]+)<\/a>/g)
-        categories = Array.from(categoryMatches, m => m[1].trim())
-        console.log('Found categories:', categories)
-      }
-      
-      // Extract rating
+      // Extract rating first
       const ratingMatch = summary.match(/Rating:\s*<a[^>]*>([^<]+)<\/a>/i)
       if (ratingMatch) {
         rating = ratingMatch[1].trim()
         console.log('Found rating:', rating)
       }
       
+      // Extract categories (F/F, M/M, etc.)
+      const categoriesMatch = summary.match(/Categories:\s*((?:<a[^>]*>[^<]+<\/a>(?:,\s*)?)+)/i)
+      if (categoriesMatch) {
+        const categoryLinks = categoriesMatch[1].match(/<a[^>]*>([^<]+)<\/a>/g)
+        if (categoryLinks) {
+          categories = categoryLinks.map(link => {
+            const match = link.match(/>([^<]+)</)
+            return match ? match[1].trim() : ''
+          }).filter(cat => cat)
+          console.log('Found categories:', categories)
+        }
+      }
+      
       // Extract characters
       const charactersMatch = summary.match(/Characters:\s*((?:<a[^>]*>[^<]+<\/a>(?:,\s*)?)+)/i)
       if (charactersMatch) {
-        const characterMatches = charactersMatch[1].matchAll(/<a[^>]*>([^<]+)<\/a>/g)
-        characters = Array.from(characterMatches, m => m[1].trim())
-        console.log('Found characters:', characters)
+        const characterLinks = charactersMatch[1].match(/<a[^>]*>([^<]+)<\/a>/g)
+        if (characterLinks) {
+          characters = characterLinks.map(link => {
+            const match = link.match(/>([^<]+)</)
+            return match ? match[1].trim() : ''
+          }).filter(char => char)
+          console.log('Found characters:', characters)
+        }
       }
       
       // Extract relationships
       const relationshipsMatch = summary.match(/Relationships:\s*((?:<a[^>]*>[^<]+<\/a>(?:,\s*)?)+)/i)
       if (relationshipsMatch) {
-        const relationshipMatches = relationshipsMatch[1].matchAll(/<a[^>]*>([^<]+)<\/a>/g)
-        relationships = Array.from(relationshipMatches, m => m[1].trim())
-        console.log('Found relationships:', relationships)
+        const relationshipLinks = relationshipsMatch[1].match(/<a[^>]*>([^<]+)<\/a>/g)
+        if (relationshipLinks) {
+          relationships = relationshipLinks.map(link => {
+            const match = link.match(/>([^<]+)</)
+            return match ? match[1].trim() : ''
+          }).filter(rel => rel)
+          console.log('Found relationships:', relationships)
+        }
       }
       
       // Extract additional tags
       const additionalTagsMatch = summary.match(/Additional Tags:\s*((?:<a[^>]*>[^<]+<\/a>(?:,\s*)?)+)/i)
       if (additionalTagsMatch) {
-        const additionalTagMatches = additionalTagsMatch[1].matchAll(/<a[^>]*>([^<]+)<\/a>/g)
-        additionalTags = Array.from(additionalTagMatches, m => m[1].trim())
-        console.log('Found additional tags:', additionalTags)
+        const tagLinks = additionalTagsMatch[1].match(/<a[^>]*>([^<]+)<\/a>/g)
+        if (tagLinks) {
+          additionalTags = tagLinks.map(link => {
+            const match = link.match(/>([^<]+)</)
+            return match ? match[1].trim() : ''
+          }).filter(tag => tag)
+          console.log('Found additional tags:', additionalTags)
+        }
       }
       
       // Extract word count and chapters
       const wordCountMatch = summary.match(/Words:\s*(\d+)/i)
       if (wordCountMatch) {
         wordCount = parseInt(wordCountMatch[1])
+        console.log('Found word count:', wordCount)
       }
       
       const chaptersMatch = summary.match(/Chapters:\s*([^<]+)/i)
       if (chaptersMatch) {
         chapters = chaptersMatch[1].trim()
+        console.log('Found chapters:', chapters)
       }
     } catch (e) {
       console.error('Error parsing summary HTML:', e)
@@ -300,6 +265,7 @@ async function saveItemsToDatabase(items: any[], supabaseClient: any) {
         id: 1,
         title: 'Cinderella Boy - Punko (Webcomic) Works',
         description: 'Latest fanfiction works for Cinderella Boy by Punko',
+        feed_url: 'https://archiveofourown.org/tags/Cinderella%20Boy%20-%20Punko%20(Webcomic)/works.atom',
         last_updated: new Date().toISOString()
       })
     
