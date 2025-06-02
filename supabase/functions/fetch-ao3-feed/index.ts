@@ -202,24 +202,72 @@ function parseWorksFromHTML(html) {
   const works = [];
   
   try {
-    // Look for work blurbs (the main work listing items)
-    const workPattern = /<li[^>]+class="work blurb group"[^>]*>([\s\S]*?)<\/li>/g;
-    let workMatch;
+    console.log('Starting HTML parsing...');
     
-    while ((workMatch = workPattern.exec(html)) !== null) {
-      const workHtml = workMatch[1];
-      
-      try {
-        const work = parseWorkFromBlurb(workHtml);
-        if (work) {
-          works.push(work);
+    // More flexible work pattern - look for any li with work class
+    const workPatterns = [
+      /<li[^>]*class="[^"]*work[^"]*"[^>]*>([\s\S]*?)<\/li>/gi,
+      /<article[^>]*class="[^"]*work[^"]*"[^>]*>([\s\S]*?)<\/article>/gi,
+      /<div[^>]*class="[^"]*work[^"]*"[^>]*>([\s\S]*?)<\/div>/gi
+    ];
+    
+    let totalMatches = 0;
+    
+    for (const pattern of workPatterns) {
+      let workMatch;
+      while ((workMatch = pattern.exec(html)) !== null) {
+        const workHtml = workMatch[1];
+        totalMatches++;
+        
+        console.log(`Processing work match ${totalMatches}`);
+        
+        try {
+          const work = parseWorkFromBlurb(workHtml);
+          if (work) {
+            console.log(`Successfully parsed work: "${work.title}"`);
+            works.push(work);
+          } else {
+            console.log(`Failed to parse work from match ${totalMatches}`);
+          }
+        } catch (error) {
+          console.error(`Error parsing individual work ${totalMatches}:`, error);
         }
-      } catch (error) {
-        console.error('Error parsing individual work:', error);
       }
     }
     
-    console.log(`Parsed ${works.length} works from HTML`);
+    console.log(`Total HTML matches found: ${totalMatches}`);
+    console.log(`Successfully parsed ${works.length} works from HTML`);
+    
+    // If no works found, let's debug the HTML structure
+    if (works.length === 0) {
+      console.log('No works found. Debugging HTML structure...');
+      
+      // Look for common AO3 patterns
+      const debugPatterns = [
+        /class="[^"]*work[^"]*"/gi,
+        /class="[^"]*heading[^"]*"/gi,
+        /class="[^"]*title[^"]*"/gi,
+        /<h[1-6][^>]*>/gi
+      ];
+      
+      for (const [index, pattern] of debugPatterns.entries()) {
+        const matches = html.match(pattern);
+        console.log(`Debug pattern ${index + 1} found ${matches ? matches.length : 0} matches`);
+        if (matches && matches.length > 0) {
+          console.log(`First 3 matches:`, matches.slice(0, 3));
+        }
+      }
+      
+      // Check if we're getting the works list at all
+      if (html.includes('No works found') || html.includes('no works')) {
+        console.log('HTML indicates no works found for this tag');
+      }
+      
+      // Check for login or access issues
+      if (html.includes('log in') || html.includes('Log In') || html.includes('sign up')) {
+        console.log('HTML suggests login may be required');
+      }
+    }
     
   } catch (error) {
     console.error('Error parsing works from HTML:', error);
@@ -229,27 +277,72 @@ function parseWorksFromHTML(html) {
 }
 
 function parseWorkFromBlurb(workHtml) {
-  // Extract title and link
-  const titleMatch = workHtml.match(/<h4[^>]+class="heading"[^>]*>[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>(.*?)<\/a>/);
+  console.log('Parsing work blurb...');
+  
+  // More flexible title and link patterns
+  const titlePatterns = [
+    /<h[1-6][^>]*class="[^"]*heading[^"]*"[^>]*>[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>(.*?)<\/a>/i,
+    /<a[^>]+href="(\/works\/[^"]+)"[^>]*class="[^"]*work[^"]*"[^>]*>(.*?)<\/a>/i,
+    /<a[^>]+href="(\/works\/[^"]+)"[^>]*>(.*?)<\/a>/i,
+    /<h[1-6][^>]*>[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>(.*?)<\/a>[\s\S]*?<\/h[1-6]>/i
+  ];
+  
+  let titleMatch = null;
+  for (const pattern of titlePatterns) {
+    titleMatch = workHtml.match(pattern);
+    if (titleMatch) {
+      console.log('Found title match with pattern');
+      break;
+    }
+  }
+  
   if (!titleMatch) {
     console.log('No title/link found in work blurb');
+    // Debug: show first 200 chars of workHtml
+    console.log('Work HTML preview:', workHtml.substring(0, 200));
     return null;
   }
   
-  const link = 'https://archiveofourown.org' + titleMatch[1];
+  const link = titleMatch[1].startsWith('http') ? titleMatch[1] : 'https://archiveofourown.org' + titleMatch[1];
   const title = titleMatch[2].replace(/<[^>]*>/g, '').trim();
   
-  // Extract author
-  const authorMatch = workHtml.match(/<a[^>]+rel="author"[^>]*>(.*?)<\/a>/);
-  const author = authorMatch ? authorMatch[1].replace(/<[^>]*>/g, '').trim() : 'Unknown';
+  console.log(`Parsing work: "${title}"`);
+  
+  // Extract author with more flexible patterns
+  const authorPatterns = [
+    /<a[^>]+rel="author"[^>]*>(.*?)<\/a>/i,
+    /<a[^>]+href="\/users\/[^"]*"[^>]*>(.*?)<\/a>/i,
+    /by\s+<a[^>]*>(.*?)<\/a>/i
+  ];
+  
+  let author = 'Unknown';
+  for (const pattern of authorPatterns) {
+    const authorMatch = workHtml.match(pattern);
+    if (authorMatch) {
+      author = authorMatch[1].replace(/<[^>]*>/g, '').trim();
+      break;
+    }
+  }
   
   // Extract summary/description
-  const summaryMatch = workHtml.match(/<blockquote[^>]+class="userstuff summary"[^>]*>([\s\S]*?)<\/blockquote>/);
-  const description = summaryMatch ? summaryMatch[1].replace(/<[^>]*>/g, '').trim() : '';
+  const summaryPatterns = [
+    /<blockquote[^>]+class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/blockquote>/i,
+    /<div[^>]+class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<p[^>]+class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/p>/i
+  ];
+  
+  let description = '';
+  for (const pattern of summaryPatterns) {
+    const summaryMatch = workHtml.match(pattern);
+    if (summaryMatch) {
+      description = summaryMatch[1].replace(/<[^>]*>/g, '').trim();
+      break;
+    }
+  }
   
   // Extract tags
   const tags = [];
-  const tagPattern = /<a[^>]+class="tag"[^>]*>(.*?)<\/a>/g;
+  const tagPattern = /<a[^>]+class="[^"]*tag[^"]*"[^>]*>(.*?)<\/a>/gi;
   let tagMatch;
   while ((tagMatch = tagPattern.exec(workHtml)) !== null) {
     const tag = tagMatch[1].replace(/<[^>]*>/g, '').trim();
@@ -259,7 +352,7 @@ function parseWorkFromBlurb(workHtml) {
   }
   
   // Extract stats (word count, chapters, etc.)
-  const statsMatch = workHtml.match(/<dl[^>]+class="stats"[^>]*>([\s\S]*?)<\/dl>/);
+  const statsMatch = workHtml.match(/<dl[^>]+class="[^"]*stats[^"]*"[^>]*>([\s\S]*?)<\/dl>/i);
   let word_count = null;
   let chapters = null;
   let rating = null;
@@ -268,13 +361,13 @@ function parseWorkFromBlurb(workHtml) {
     const statsHtml = statsMatch[1];
     
     // Word count
-    const wordMatch = statsHtml.match(/<dt[^>]*>Words:<\/dt>\s*<dd[^>]*>([\d,]+)<\/dd>/);
+    const wordMatch = statsHtml.match(/<dt[^>]*>Words:<\/dt>\s*<dd[^>]*>([\d,]+)<\/dd>/i);
     if (wordMatch) {
       word_count = parseInt(wordMatch[1].replace(/,/g, ''));
     }
     
     // Chapters
-    const chapterMatch = statsHtml.match(/<dt[^>]*>Chapters:<\/dt>\s*<dd[^>]*>(\d+(?:\/\d+)?)<\/dd>/);
+    const chapterMatch = statsHtml.match(/<dt[^>]*>Chapters:<\/dt>\s*<dd[^>]*>(\d+(?:\/\d+)?)<\/dd>/i);
     if (chapterMatch) {
       chapters = chapterMatch[1];
     }
@@ -290,24 +383,34 @@ function parseWorkFromBlurb(workHtml) {
   }
   
   // Generate a unique ID from the link
-  const workId = link.match(/\/works\/(\d+)/)?.[1] || Date.now().toString();
+  const workIdMatch = link.match(/\/works\/(\d+)/);
+  const workId = workIdMatch ? workIdMatch[1] : Date.now().toString();
   
   // Extract published date (this is tricky from the listing page)
-  const dateMatch = workHtml.match(/<p[^>]+class="datetime"[^>]*>(.*?)<\/p>/);
+  const datePatterns = [
+    /<p[^>]+class="[^"]*datetime[^"]*"[^>]*>(.*?)<\/p>/i,
+    /<time[^>]*datetime="([^"]*)"[^>]*>/i,
+    /<span[^>]+class="[^"]*date[^"]*"[^>]*>(.*?)<\/span>/i
+  ];
+  
   let published_date = new Date().toISOString();
-  if (dateMatch) {
-    try {
-      const dateText = dateMatch[1].replace(/<[^>]*>/g, '').trim();
-      published_date = new Date(dateText).toISOString();
-    } catch (e) {
-      console.log('Could not parse date:', dateMatch[1]);
+  for (const pattern of datePatterns) {
+    const dateMatch = workHtml.match(pattern);
+    if (dateMatch) {
+      try {
+        const dateText = dateMatch[1].replace(/<[^>]*>/g, '').trim();
+        published_date = new Date(dateText).toISOString();
+        break;
+      } catch (e) {
+        console.log('Could not parse date:', dateMatch[1]);
+      }
     }
   }
   
-  return {
+  const result = {
     id: workId,
     title,
-    description,
+    description: description || null,
     link,
     author,
     published_date,
@@ -319,4 +422,7 @@ function parseWorkFromBlurb(workHtml) {
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString()
   };
+  
+  console.log(`Successfully created work object for: "${title}"`);
+  return result;
 }
