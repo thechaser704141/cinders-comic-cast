@@ -48,64 +48,65 @@ serve(async (req) => {
       const published = entry.getElementsByTagName('published')[0]?.textContent?.trim()
       const summary = entry.getElementsByTagName('summary')[0]?.textContent?.trim()
       
-      let tags = []
-      let rating = null
       let categories = []
       let characters = []
       let relationships = []
       let additionalTags = []
+      let rating = null
       let wordCount = null
       let chapters = null
       
       if (summary) {
-        // Parse HTML content within summary to extract structured data
+        console.log(`\nProcessing entry: ${title}`)
+        console.log('Summary content:', summary.substring(0, 500) + '...')
+        
         try {
-          const summaryDoc = parser.parseFromString(summary, 'text/html')
-          
-          // Extract rating
-          const ratingMatch = summary.match(/Rating:\s*<a[^>]*>([^<]+)<\/a>/)
-          if (ratingMatch) {
-            rating = ratingMatch[1].trim()
-          }
-          
-          // Extract categories
-          const categoriesMatch = summary.match(/Categories:\s*((?:<a[^>]*>[^<]+<\/a>(?:,\s*)?)+)/)
+          // Extract categories (F/F, M/M, etc.)
+          const categoriesMatch = summary.match(/Categories:\s*((?:<a[^>]*>[^<]+<\/a>(?:,\s*)?)+)/i)
           if (categoriesMatch) {
             const categoryMatches = categoriesMatch[1].matchAll(/<a[^>]*>([^<]+)<\/a>/g)
             categories = Array.from(categoryMatches, m => m[1].trim())
+            console.log('Found categories:', categories)
+          }
+          
+          // Extract rating
+          const ratingMatch = summary.match(/Rating:\s*<a[^>]*>([^<]+)<\/a>/i)
+          if (ratingMatch) {
+            rating = ratingMatch[1].trim()
+            console.log('Found rating:', rating)
           }
           
           // Extract characters
-          const charactersMatch = summary.match(/Characters:\s*((?:<a[^>]*>[^<]+<\/a>(?:,\s*)?)+)/)
+          const charactersMatch = summary.match(/Characters:\s*((?:<a[^>]*>[^<]+<\/a>(?:,\s*)?)+)/i)
           if (charactersMatch) {
             const characterMatches = charactersMatch[1].matchAll(/<a[^>]*>([^<]+)<\/a>/g)
             characters = Array.from(characterMatches, m => m[1].trim())
+            console.log('Found characters:', characters)
           }
           
           // Extract relationships
-          const relationshipsMatch = summary.match(/Relationships:\s*((?:<a[^>]*>[^<]+<\/a>(?:,\s*)?)+)/)
+          const relationshipsMatch = summary.match(/Relationships:\s*((?:<a[^>]*>[^<]+<\/a>(?:,\s*)?)+)/i)
           if (relationshipsMatch) {
             const relationshipMatches = relationshipsMatch[1].matchAll(/<a[^>]*>([^<]+)<\/a>/g)
             relationships = Array.from(relationshipMatches, m => m[1].trim())
+            console.log('Found relationships:', relationships)
           }
           
           // Extract additional tags
-          const additionalTagsMatch = summary.match(/Additional Tags:\s*((?:<a[^>]*>[^<]+<\/a>(?:,\s*)?)+)/)
+          const additionalTagsMatch = summary.match(/Additional Tags:\s*((?:<a[^>]*>[^<]+<\/a>(?:,\s*)?)+)/i)
           if (additionalTagsMatch) {
             const additionalTagMatches = additionalTagsMatch[1].matchAll(/<a[^>]*>([^<]+)<\/a>/g)
             additionalTags = Array.from(additionalTagMatches, m => m[1].trim())
+            console.log('Found additional tags:', additionalTags)
           }
           
-          // Combine all tags for backwards compatibility
-          tags = [...characters, ...relationships, ...additionalTags]
-          
           // Extract word count and chapters
-          const wordCountMatch = summary.match(/Words:\s*(\d+)/)
+          const wordCountMatch = summary.match(/Words:\s*(\d+)/i)
           if (wordCountMatch) {
             wordCount = parseInt(wordCountMatch[1])
           }
           
-          const chaptersMatch = summary.match(/Chapters:\s*([^<]+)/)
+          const chaptersMatch = summary.match(/Chapters:\s*([^<]+)/i)
           if (chaptersMatch) {
             chapters = chaptersMatch[1].trim()
           }
@@ -134,7 +135,7 @@ serve(async (req) => {
           link,
           author,
           published_date: published ? new Date(published).toISOString() : null,
-          tags,
+          tags: [...characters, ...relationships, ...additionalTags], // Keep for backwards compatibility
           categories,
           characters,
           relationships,
@@ -147,6 +148,7 @@ serve(async (req) => {
           updated_at: new Date().toISOString()
         }
         
+        console.log('Final item data:', JSON.stringify(item, null, 2))
         items.push(item)
       }
     }
