@@ -374,35 +374,65 @@ function parseWorkFromBlurb(workHtml) {
     }
   }
   
-  // Extract summary/description
+  // Extract summary/description with improved patterns
   let description = '';
   const summaryPatterns = [
-    /<blockquote[^>]+class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/blockquote>/i,
-    /<div[^>]+class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<p[^>]+class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/p>/i
+    /<blockquote[^>]*class="[^"]*summary[^"]*"[^>]*>\s*<p[^>]*>([\s\S]*?)<\/p>\s*<\/blockquote>/i,
+    /<blockquote[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/blockquote>/i,
+    /<div[^>]*class="[^"]*summary[^"]*"[^>]*>\s*<p[^>]*>([\s\S]*?)<\/p>/i,
+    /<div[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+    /<p[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/p>/i
   ];
   
   for (const pattern of summaryPatterns) {
     const summaryMatch = workHtml.match(pattern);
     if (summaryMatch) {
-      description = summaryMatch[1].replace(/<[^>]*>/g, '').trim();
-      // Clean up common HTML entities
-      description = description.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
-      break;
+      description = summaryMatch[1]
+        .replace(/<[^>]*>/g, '') // Remove HTML tags
+        .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"') // Decode entities
+        .replace(/\s+/g, ' ') // Normalize whitespace
+        .trim();
+      if (description) {
+        console.log(`Found description: ${description.substring(0, 100)}...`);
+        break;
+      }
     }
   }
   
-  // Extract tags (excluding the fandom tag we don't want)
+  // Extract tags with improved parsing
   const tags = [];
-  const tagPattern = /<a[^>]+class="[^"]*tag[^"]*"[^>]*>(.*?)<\/a>/gi;
-  let tagMatch;
-  while ((tagMatch = tagPattern.exec(workHtml)) !== null) {
-    const tag = tagMatch[1].replace(/<[^>]*>/g, '').trim();
-    // Skip the main fandom tag since we don't want it in the display
-    if (tag && !tags.includes(tag) && tag !== 'Cinderella Boy - Punko (Webcomic)') {
-      tags.push(tag);
+  
+  // Look for the tags section specifically
+  const tagsSection = workHtml.match(/<ul[^>]*class="[^"]*tags[^"]*"[^>]*>([\s\S]*?)<\/ul>/i);
+  if (tagsSection) {
+    console.log('Found tags section');
+    const tagsHtml = tagsSection[1];
+    
+    // Extract individual tag links
+    const tagPattern = /<a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]*)<\/a>/gi;
+    let tagMatch;
+    while ((tagMatch = tagPattern.exec(tagsHtml)) !== null) {
+      const tag = tagMatch[1].trim();
+      // Skip the main fandom tag and duplicates
+      if (tag && !tags.includes(tag) && tag !== 'Cinderella Boy - Punko (Webcomic)') {
+        tags.push(tag);
+      }
     }
   }
+  
+  // Fallback: look for tags anywhere in the work blurb
+  if (tags.length === 0) {
+    const tagPattern = /<a[^>]*class="[^"]*tag[^"]*"[^>]*>([^<]*)<\/a>/gi;
+    let tagMatch;
+    while ((tagMatch = tagPattern.exec(workHtml)) !== null) {
+      const tag = tagMatch[1].trim();
+      if (tag && !tags.includes(tag) && tag !== 'Cinderella Boy - Punko (Webcomic)') {
+        tags.push(tag);
+      }
+    }
+  }
+  
+  console.log(`Found ${tags.length} tags: ${tags.join(', ')}`);
   
   // Extract stats
   let word_count = null;
@@ -426,38 +456,35 @@ function parseWorkFromBlurb(workHtml) {
     }
   }
   
-  // Extract rating from tags or dedicated section
-  const ratingTags = ['General Audiences', 'Teen And Up Audiences', 'Mature', 'Explicit', 'Not Rated'];
-  for (const tag of tags) {
-    if (ratingTags.includes(tag)) {
-      rating = tag;
-      break;
-    }
-  }
+  // Extract rating from required tags section
+  const requiredTagsPattern = /<ul[^>]*class="[^"]*required-tags[^"]*"[^>]*>([\s\S]*?)<\/ul>/i;
+  const requiredTagsMatch = workHtml.match(requiredTagsPattern);
   
-  // If rating not found in tags, look for it in a dedicated rating section
-  if (!rating) {
-    const ratingMatch = workHtml.match(/<span[^>]*class="[^"]*rating[^"]*"[^>]*>(.*?)<\/span>/i);
-    if (ratingMatch) {
-      const ratingText = ratingMatch[1].replace(/<[^>]*>/g, '').trim();
-      if (ratingTags.includes(ratingText)) {
-        rating = ratingText;
+  if (requiredTagsMatch) {
+    const requiredTagsHtml = requiredTagsMatch[1];
+    const ratingTags = ['General Audiences', 'Teen And Up Audiences', 'Mature', 'Explicit', 'Not Rated'];
+    
+    for (const ratingTag of ratingTags) {
+      if (requiredTagsHtml.includes(ratingTag)) {
+        rating = ratingTag;
+        break;
       }
     }
   }
   
-  // Extract published date - look for datetime attribute in date elements
+  // Extract published date with improved patterns
   let published_date = null;
-  const datePatterns = [
-    /<time[^>]+datetime="([^"]+)"[^>]*>/i,
-    /<span[^>]*class="[^"]*datetime[^"]*"[^>]*datetime="([^"]+)"[^>]*>/i,
-    /<p[^>]*class="[^"]*datetime[^"]*"[^>]*>(.*?)<\/p>/i
+  
+  // Look for datetime attributes in the work
+  const dateTimePatterns = [
+    /<time[^>]*datetime="([^"]+)"[^>]*>/i,
+    /<span[^>]*datetime="([^"]+)"[^>]*>/i,
+    /<dd[^>]*class="[^"]*published[^"]*"[^>]*datetime="([^"]+)"[^>]*>/i
   ];
   
-  for (const pattern of datePatterns) {
+  for (const pattern of dateTimePatterns) {
     const dateMatch = workHtml.match(pattern);
     if (dateMatch) {
-      // Try to parse the datetime
       const dateStr = dateMatch[1];
       const parsedDate = new Date(dateStr);
       if (!isNaN(parsedDate.getTime())) {
@@ -468,14 +495,36 @@ function parseWorkFromBlurb(workHtml) {
     }
   }
   
-  // If no datetime found, look for text-based dates
+  // Look for text-based dates in the published section
   if (!published_date) {
-    const textDateMatch = workHtml.match(/(\d{2}\s+\w{3}\s+\d{4})/i);
-    if (textDateMatch) {
-      const parsedDate = new Date(textDateMatch[1]);
+    const publishedSection = workHtml.match(/<dd[^>]*class="[^"]*published[^"]*"[^>]*>(.*?)<\/dd>/i);
+    if (publishedSection) {
+      const dateText = publishedSection[1].replace(/<[^>]*>/g, '').trim();
+      const parsedDate = new Date(dateText);
       if (!isNaN(parsedDate.getTime())) {
         published_date = parsedDate.toISOString();
-        console.log(`Found text date: ${textDateMatch[1]} -> ${published_date}`);
+        console.log(`Found text date: ${dateText} -> ${published_date}`);
+      }
+    }
+  }
+  
+  // Look for any date pattern in the stats section
+  if (!published_date) {
+    const datePatterns = [
+      /(\d{4}-\d{2}-\d{2})/,
+      /(\d{2}\s+\w{3}\s+\d{4})/,
+      /(\w{3}\s+\d{1,2},?\s+\d{4})/
+    ];
+    
+    for (const pattern of datePatterns) {
+      const match = workHtml.match(pattern);
+      if (match) {
+        const parsedDate = new Date(match[1]);
+        if (!isNaN(parsedDate.getTime())) {
+          published_date = parsedDate.toISOString();
+          console.log(`Found date pattern: ${match[1]} -> ${published_date}`);
+          break;
+        }
       }
     }
   }
@@ -503,7 +552,8 @@ function parseWorkFromBlurb(workHtml) {
   console.log(`- Author: ${author}`);
   console.log(`- Published: ${published_date}`);
   console.log(`- Tags: ${tags.join(', ')}`);
-  console.log(`- Description length: ${description?.length || 0}`);
+  console.log(`- Description: ${description ? description.substring(0, 100) + '...' : 'None'}`);
+  console.log(`- Rating: ${rating || 'None'}`);
   
   return result;
 }

@@ -22,8 +22,8 @@ export const RSSFeed = () => {
       if (error) throw error;
       return data;
     },
-    staleTime: 1000 * 60 * 60, // Consider data stale after 1 hour
-    refetchInterval: 1000 * 60 * 60 * 3, // Auto-refetch every 3 hours
+    staleTime: 1000 * 60 * 30, // Consider data stale after 30 minutes
+    refetchInterval: 1000 * 60 * 60, // Auto-refetch every hour
   });
 
   const { data: feedMetadata } = useQuery({
@@ -74,8 +74,8 @@ export const RSSFeed = () => {
       
       if (feedMetadata?.last_updated) {
         const lastUpdate = new Date(feedMetadata.last_updated);
-        const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
-        return lastUpdate < threeHoursAgo;
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000); // Changed to 1 hour
+        return lastUpdate < oneHourAgo;
       }
       
       return false;
@@ -87,13 +87,13 @@ export const RSSFeed = () => {
     }
   }, [feedMetadata]);
 
-  // Set up auto-refresh every 3 hours
+  // Set up auto-refresh every hour
   useEffect(() => {
     const interval = setInterval(() => {
-      console.log('Auto-refresh triggered');
+      console.log('Hourly auto-refresh triggered');
       setLastAutoRefresh(new Date());
       refreshFeed();
-    }, 3 * 60 * 60 * 1000); // 3 hours
+    }, 60 * 60 * 1000); // Changed to 1 hour
 
     return () => clearInterval(interval);
   }, []);
@@ -137,7 +137,7 @@ export const RSSFeed = () => {
             )}
             <div className="flex items-center gap-1">
               <Clock className="h-4 w-4" />
-              <span>Auto-refresh: every 3 hours</span>
+              <span>Auto-refresh: every hour</span>
             </div>
           </div>
         </div>
@@ -160,6 +160,16 @@ export const RSSFeed = () => {
         <div className="flex items-center justify-center py-12">
           <Loader2 className="h-8 w-8 animate-spin" />
           <span className="ml-2">Loading feed...</span>
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center justify-center py-12">
+          <AlertCircle className="h-12 w-12 text-red-500 mb-4" />
+          <h2 className="text-xl font-semibold mb-2">Error Loading Feed</h2>
+          <p className="text-gray-600 mb-4">Failed to load the RSS feed</p>
+          <Button onClick={refreshFeed} disabled={isRefreshing}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Try Again
+          </Button>
         </div>
       ) : (
         <div className="space-y-6">
