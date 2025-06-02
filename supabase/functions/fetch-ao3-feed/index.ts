@@ -1,4 +1,3 @@
-
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -56,41 +55,27 @@ function parseWorksFromHTML(html) {
     console.log('=== DEBUGGING HTML STRUCTURE ===');
     console.log('HTML length:', html.length);
     
-    // Log a sample of the HTML to see the actual structure
-    const sampleStart = html.indexOf('<ol class="work index group">');
-    if (sampleStart !== -1) {
-      console.log('Found work list container');
-      const sampleEnd = sampleStart + 3000;
-      console.log('Sample HTML around work list:', html.substring(sampleStart, sampleEnd));
-    } else {
-      console.log('No work list container found, looking for alternatives...');
-      // Look for any ol or ul elements
-      const olMatch = html.match(/<ol[^>]*>/i);
-      const ulMatch = html.match(/<ul[^>]*>/i);
-      if (olMatch || ulMatch) {
-        console.log('Found ol/ul elements:', olMatch ? olMatch[0] : '', ulMatch ? ulMatch[0] : '');
-      }
-      
-      // Look for work-related classes
-      const workClasses = html.match(/class="[^"]*work[^"]*"/gi);
-      if (workClasses) {
-        console.log('Found work-related classes:', workClasses.slice(0, 5));
-      }
+    // Look for the actual AO3 work list structure
+    const workListRegex = /<ol[^>]*class="[^"]*work[^"]*index[^"]*"[^>]*>([\s\S]*?)<\/ol>/i;
+    const workListMatch = html.match(workListRegex);
+    
+    if (!workListMatch) {
+      console.log('No work list found, trying alternative approach...');
+      return works;
     }
     
-    // Try multiple approaches to find works
+    console.log('Found work list, extracting individual works...');
+    const workListHtml = workListMatch[1];
     
-    // Approach 1: Look for work blurb class
-    const blurbRegex = /<li[^>]*class="[^"]*blurb[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
+    // Extract individual work items - AO3 uses <li class="work blurb group">
+    const workRegex = /<li[^>]*class="[^"]*work[^"]*blurb[^"]*"[^>]*>([\s\S]*?)<\/li>/gi;
     let match;
     let workCount = 0;
     
-    while ((match = blurbRegex.exec(html)) !== null && workCount < 20) {
+    while ((match = workRegex.exec(workListHtml)) !== null && workCount < 20) {
       workCount++;
       console.log(`\n=== PARSING WORK ${workCount} ===`);
       const workHtml = match[1];
-      console.log('Work HTML length:', workHtml.length);
-      console.log('Work HTML sample (first 500 chars):', workHtml.substring(0, 500));
       
       const work = parseIndividualWork(workHtml, workCount);
       if (work && work.title && work.link) {
@@ -98,30 +83,6 @@ function parseWorksFromHTML(html) {
         works.push(work);
       } else {
         console.log('Failed to parse work properly');
-      }
-    }
-    
-    if (works.length === 0) {
-      console.log('No works found with blurb class, trying alternative approach...');
-      
-      // Approach 2: Look for any li with work-related content
-      const workRegex = /<li[^>]*>([\s\S]*?)<\/li>/gi;
-      let workMatch;
-      let altWorkCount = 0;
-      
-      while ((workMatch = workRegex.exec(html)) !== null && altWorkCount < 5) {
-        const liContent = workMatch[1];
-        if (liContent.includes('href="/works/') || liContent.includes('class="heading"')) {
-          altWorkCount++;
-          console.log(`\n=== ALTERNATIVE PARSING ${altWorkCount} ===`);
-          console.log('LI content sample:', liContent.substring(0, 500));
-          
-          const work = parseIndividualWork(liContent, altWorkCount);
-          if (work && work.title && work.link) {
-            console.log(`Successfully parsed alternative work: "${work.title}"`);
-            works.push(work);
-          }
-        }
       }
     }
     
@@ -137,81 +98,45 @@ function parseWorksFromHTML(html) {
 function parseIndividualWork(workHtml, workIndex) {
   console.log(`Parsing work ${workIndex}...`);
   
-  // Extract title and link - try multiple patterns
+  // Extract title and link
   let title = null;
   let link = null;
   
-  // Pattern 1: Standard AO3 work link
-  const linkPattern1 = /<a[^>]*href="(\/works\/\d+[^"]*)"[^>]*>([^<]+)<\/a>/i;
-  const match1 = workHtml.match(linkPattern1);
-  if (match1) {
-    link = 'https://archiveofourown.org' + match1[1];
-    title = cleanHtmlText(match1[2]);
-    console.log(`Pattern 1 - Title: "${title}", Link: ${link}`);
-  }
-  
-  // Pattern 2: Look for any work link
-  if (!title) {
-    const linkPattern2 = /href="(https:\/\/archiveofourown\.org\/works\/\d+[^"]*)"[^>]*>([^<]+)<\/a>/i;
-    const match2 = workHtml.match(linkPattern2);
-    if (match2) {
-      link = match2[1];
-      title = cleanHtmlText(match2[2]);
-      console.log(`Pattern 2 - Title: "${title}", Link: ${link}`);
-    }
-  }
-  
-  // Pattern 3: Look for heading class
-  if (!title) {
-    const linkPattern3 = /<h4[^>]*class="[^"]*heading[^"]*"[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/i;
-    const match3 = workHtml.match(linkPattern3);
-    if (match3) {
-      link = match3[1].startsWith('http') ? match3[1] : 'https://archiveofourown.org' + match3[1];
-      title = cleanHtmlText(match3[2]);
-      console.log(`Pattern 3 - Title: "${title}", Link: ${link}`);
-    }
+  // AO3 structure: <h4 class="heading"><a href="/works/123456">Title</a>
+  const titleLinkPattern = /<h4[^>]*class="[^"]*heading[^"]*"[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/i;
+  const match = workHtml.match(titleLinkPattern);
+  if (match) {
+    link = match[1].startsWith('http') ? match[1] : 'https://archiveofourown.org' + match[1];
+    title = cleanHtmlText(match[2]);
+    console.log(`Found - Title: "${title}", Link: ${link}`);
   }
   
   if (!title || !link) {
     console.log(`No title/link found for work ${workIndex}`);
+    // Log some HTML to debug
+    console.log(`Work HTML sample: ${workHtml.substring(0, 300)}`);
     return null;
   }
   
   // Extract author
   let author = null;
-  const authorPatterns = [
-    /<a[^>]*rel="author"[^>]*>([^<]+)<\/a>/i,
-    /by\s+<a[^>]*>([^<]+)<\/a>/i,
-    /<a[^>]*href="\/users\/[^"]*"[^>]*>([^<]+)<\/a>/i
-  ];
-  
-  for (const pattern of authorPatterns) {
-    const match = workHtml.match(pattern);
-    if (match) {
-      author = cleanHtmlText(match[1]);
-      console.log(`Author found: ${author}`);
-      break;
-    }
+  const authorPattern = /<a[^>]*rel="author"[^>]*>([^<]+)<\/a>/i;
+  const authorMatch = workHtml.match(authorPattern);
+  if (authorMatch) {
+    author = cleanHtmlText(authorMatch[1]);
+    console.log(`Author found: ${author}`);
   }
   
   // Extract description
   let description = null;
-  const descPatterns = [
-    /<blockquote[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/blockquote>/i,
-    /<div[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
-    /<blockquote[^>]*>([\s\S]*?)<\/blockquote>/i
-  ];
-  
-  for (const pattern of descPatterns) {
-    const match = workHtml.match(pattern);
-    if (match) {
-      description = cleanHtmlText(match[1]);
-      if (description && description.length > 200) {
-        description = description.substring(0, 200) + '...';
-      }
-      console.log(`Description found: ${description ? description.substring(0, 50) + '...' : 'None'}`);
-      break;
+  const descPattern = /<blockquote[^>]*class="[^"]*summary[^"]*"[^>]*>([\s\S]*?)<\/blockquote>/i;
+  const descMatch = workHtml.match(descPattern);
+  if (descMatch) {
+    description = cleanHtmlText(descMatch[1]);
+    if (description && description.length > 200) {
+      description = description.substring(0, 200) + '...';
     }
+    console.log(`Description found: ${description ? description.substring(0, 50) + '...' : 'None'}`);
   }
   
   // Extract tags
@@ -227,132 +152,114 @@ function parseIndividualWork(workHtml, workIndex) {
   }
   console.log(`Tags found: ${tags.length} - ${tags.slice(0, 3).join(', ')}`);
   
-  // Extract published date - comprehensive approach
+  // Extract published date - AO3 stores dates in <p class="datetime">
   let published_date = null;
   
-  // First, let's look for any datetime attributes in the HTML
   console.log(`\n--- DATE EXTRACTION DEBUG FOR WORK ${workIndex} ---`);
   
-  // Log any datetime attributes found
-  const datetimeMatches = workHtml.match(/datetime="[^"]+"/gi);
-  if (datetimeMatches) {
-    console.log(`Found datetime attributes: ${datetimeMatches.join(', ')}`);
-  } else {
-    console.log('No datetime attributes found');
-  }
+  // Look for the datetime paragraph which contains the actual date
+  const datetimePattern = /<p[^>]*class="[^"]*datetime[^"]*"[^>]*>([\s\S]*?)<\/p>/i;
+  const datetimeMatch = workHtml.match(datetimePattern);
   
-  // Log any "Published" text found
-  const publishedMatches = workHtml.match(/Published[^<\n]+/gi);
-  if (publishedMatches) {
-    console.log(`Found "Published" text: ${publishedMatches.join(', ')}`);
-  } else {
-    console.log('No "Published" text found');
-  }
-  
-  // Log date-like patterns
-  const datePatterns = [
-    /\b\d{4}-\d{2}-\d{2}\b/g,
-    /\b\d{1,2}\s+\w{3,9}\s+\d{4}\b/g,
-    /\b\w{3,9}\s+\d{1,2},?\s+\d{4}\b/g
-  ];
-  
-  datePatterns.forEach((pattern, index) => {
-    const matches = workHtml.match(pattern);
-    if (matches) {
-      console.log(`Date pattern ${index + 1} matches: ${matches.join(', ')}`);
-    }
-  });
-  
-  // Now try extraction patterns
-  const extractionPatterns = [
-    // AO3's standard datetime format
-    /datetime="([^"]+)"/i,
-    // Standard published date in statistics
-    /<dd[^>]*class="[^"]*published[^"]*"[^>]*>([^<]+)<\/dd>/i,
-    // Alternative published formats
-    /<dt[^>]*>\s*Published:\s*<\/dt>\s*<dd[^>]*>([^<]+)<\/dd>/i,
-    /Published:\s*([^<\n]+)/i,
-    // Generic date patterns
-    /(\d{4}-\d{2}-\d{2})/i,
-    /(\d{1,2}\s+\w{3,9}\s+\d{4})/i,
-    /(\w{3,9}\s+\d{1,2},?\s+\d{4})/i
-  ];
-  
-  for (let i = 0; i < extractionPatterns.length; i++) {
-    const pattern = extractionPatterns[i];
-    const match = workHtml.match(pattern);
-    if (match) {
+  if (datetimeMatch) {
+    console.log(`Found datetime paragraph: ${datetimeMatch[1]}`);
+    
+    // Within the datetime paragraph, look for the actual datetime attribute
+    const datetimeContent = datetimeMatch[1];
+    const datetimeAttrPattern = /datetime="([^"]+)"/i;
+    const datetimeAttrMatch = datetimeContent.match(datetimeAttrPattern);
+    
+    if (datetimeAttrMatch) {
       try {
-        const dateStr = cleanHtmlText(match[1]);
-        console.log(`Pattern ${i + 1} found date string: "${dateStr}"`);
+        const dateStr = datetimeAttrMatch[1];
+        console.log(`Found datetime attribute: "${dateStr}"`);
         const parsedDate = new Date(dateStr);
         if (!isNaN(parsedDate.getTime())) {
           published_date = parsedDate.toISOString();
           console.log(`Successfully parsed date: ${published_date}`);
-          break;
         } else {
-          console.log(`Failed to parse date: "${dateStr}"`);
+          console.log(`Failed to parse datetime: "${dateStr}"`);
         }
       } catch (e) {
-        console.log(`Date parsing exception for "${match[1]}": ${e.message}`);
+        console.log(`Date parsing exception: ${e.message}`);
+      }
+    } else {
+      console.log('No datetime attribute found in datetime paragraph');
+      console.log(`Datetime content: ${datetimeContent}`);
+    }
+  } else {
+    console.log('No datetime paragraph found');
+    
+    // Fallback: look for any datetime attribute in the entire work HTML
+    const fallbackDatetimePattern = /datetime="([^"]+)"/i;
+    const fallbackMatch = workHtml.match(fallbackDatetimePattern);
+    if (fallbackMatch) {
+      try {
+        const dateStr = fallbackMatch[1];
+        console.log(`Found fallback datetime: "${dateStr}"`);
+        const parsedDate = new Date(dateStr);
+        if (!isNaN(parsedDate.getTime())) {
+          published_date = parsedDate.toISOString();
+          console.log(`Successfully parsed fallback date: ${published_date}`);
+        }
+      } catch (e) {
+        console.log(`Fallback date parsing exception: ${e.message}`);
       }
     }
   }
   
   if (!published_date) {
     console.log('No valid published date found');
-    // Log a sample of the work HTML to see what we're working with
-    console.log(`Work HTML sample (chars 200-800): ${workHtml.substring(200, 800)}`);
+    // Log a larger sample to see what we're missing
+    console.log(`Work HTML sample (chars 500-1000): ${workHtml.substring(500, 1000)}`);
   }
   
   console.log(`--- END DATE EXTRACTION DEBUG ---\n`);
   
-  // Extract word count
+  // Extract statistics (word count, chapters, etc.)
   let word_count = null;
-  const wordPatterns = [
-    /<dd[^>]*class="[^"]*words[^"]*"[^>]*>([^<]+)<\/dd>/i,
-    /(\d+(?:,\d+)*)\s*words/i
-  ];
+  let chapters = null;
   
-  for (const pattern of wordPatterns) {
-    const match = workHtml.match(pattern);
-    if (match) {
-      const wordStr = cleanHtmlText(match[1]).replace(/,/g, '');
+  // Look for the stats dl (definition list)
+  const statsPattern = /<dl[^>]*class="[^"]*stats[^"]*"[^>]*>([\s\S]*?)<\/dl>/i;
+  const statsMatch = workHtml.match(statsPattern);
+  
+  if (statsMatch) {
+    const statsHtml = statsMatch[1];
+    console.log(`Found stats section`);
+    
+    // Extract word count
+    const wordsPattern = /<dt[^>]*class="[^"]*words[^"]*"[^>]*>[\s\S]*?<dd[^>]*class="[^"]*words[^"]*"[^>]*>([^<]+)<\/dd>/i;
+    const wordsMatch = statsHtml.match(wordsPattern);
+    if (wordsMatch) {
+      const wordStr = cleanHtmlText(wordsMatch[1]).replace(/,/g, '');
       word_count = parseInt(wordStr) || null;
       console.log(`Word count found: ${word_count}`);
-      break;
     }
-  }
-  
-  // Extract chapters
-  let chapters = null;
-  const chapterPatterns = [
-    /<dd[^>]*class="[^"]*chapters[^"]*"[^>]*>([^<]+)<\/dd>/i,
-    /(\d+(?:\/\d+)?)\s*chapters?/i
-  ];
-  
-  for (const pattern of chapterPatterns) {
-    const match = workHtml.match(pattern);
-    if (match) {
-      chapters = cleanHtmlText(match[1]);
+    
+    // Extract chapters
+    const chaptersPattern = /<dt[^>]*class="[^"]*chapters[^"]*"[^>]*>[\s\S]*?<dd[^>]*class="[^"]*chapters[^"]*"[^>]*>([^<]+)<\/dd>/i;
+    const chaptersMatch = statsHtml.match(chaptersPattern);
+    if (chaptersMatch) {
+      chapters = cleanHtmlText(chaptersMatch[1]);
       console.log(`Chapters found: ${chapters}`);
-      break;
     }
   }
   
   // Extract rating
   let rating = null;
-  const ratingMap = {
-    'General Audiences': /General\s+Audiences/i,
-    'Teen And Up Audiences': /Teen\s+And\s+Up/i,
-    'Mature': /\bMature\b/i,
-    'Explicit': /\bExplicit\b/i,
-    'Not Rated': /Not\s+Rated/i
-  };
+  const ratingPatterns = [
+    /<span[^>]*class="[^"]*rating-general-audience[^"]*"[^>]*title="([^"]*)"[^>]*>/i,
+    /<span[^>]*class="[^"]*rating-teen[^"]*"[^>]*title="([^"]*)"[^>]*>/i,
+    /<span[^>]*class="[^"]*rating-mature[^"]*"[^>]*title="([^"]*)"[^>]*>/i,
+    /<span[^>]*class="[^"]*rating-explicit[^"]*"[^>]*title="([^"]*)"[^>]*>/i,
+    /<span[^>]*class="[^"]*rating-notrated[^"]*"[^>]*title="([^"]*)"[^>]*>/i
+  ];
   
-  for (const [ratingName, pattern] of Object.entries(ratingMap)) {
-    if (pattern.test(workHtml)) {
-      rating = ratingName;
+  for (const pattern of ratingPatterns) {
+    const match = workHtml.match(pattern);
+    if (match) {
+      rating = cleanHtmlText(match[1]);
       console.log(`Rating found: ${rating}`);
       break;
     }
@@ -390,7 +297,7 @@ serve(async (req) => {
     // Base URL for Cinderella Boy works
     const baseUrl = 'https://archiveofourown.org/tags/Cinderella%20Boy%20-%20Punko%20(Webcomic)/works';
     
-    console.log('Starting AO3 scraping with enhanced date extraction...');
+    console.log('Starting AO3 scraping with improved HTML parsing...');
     
     // Add random delay before starting
     await randomDelay(500, 1500);
