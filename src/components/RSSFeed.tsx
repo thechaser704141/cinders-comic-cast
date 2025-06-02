@@ -14,12 +14,20 @@ export const RSSFeed = () => {
   const { data: feedItems, isLoading, error, refetch } = useQuery({
     queryKey: ['rss-feed'],
     queryFn: async () => {
+      console.log('Fetching RSS feed items...');
       const { data, error } = await supabase
         .from('rss_items')
         .select('*')
-        .order('published_date', { ascending: false });
+        .order('updated_at', { ascending: false }); // Changed from published_date to updated_at
       
-      if (error) throw error;
+      if (error) {
+        console.error('Error fetching RSS items:', error);
+        throw error;
+      }
+      
+      console.log('Fetched RSS items:', data?.length, 'items');
+      console.log('Sample item:', data?.[0]);
+      
       return data;
     },
     staleTime: 1000 * 60 * 30, // Consider data stale after 30 minutes
