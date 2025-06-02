@@ -1,3 +1,4 @@
+
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
@@ -77,42 +78,6 @@ function getElementAttribute(xmlString, tagName, attributeName) {
   const regex = new RegExp(`<${tagName}[^>]*${attributeName}="([^"]*)"[^>]*>`, 'i');
   const match = xmlString.match(regex);
   return match ? match[1] : null;
-}
-
-// Parse RSS/Atom feed entries
-function parseRSSEntries(feedContent) {
-  console.log('=== PARSING RSS/ATOM FEED ===');
-  console.log('Feed content length:', feedContent.length);
-  
-  const works = [];
-  
-  try {
-    // Look for entries (Atom format) or items (RSS format)
-    const entryRegex = /<entry[^>]*>([\s\S]*?)<\/entry>/gi;
-    let match;
-    let entryCount = 0;
-    
-    while ((match = entryRegex.exec(feedContent)) !== null && entryCount < 50) {
-      entryCount++;
-      console.log(`\n=== PARSING ENTRY ${entryCount} ===`);
-      const entryXml = match[1];
-      
-      const work = parseRSSEntry(entryXml, entryCount);
-      if (work && work.title && work.link) {
-        console.log(`Successfully parsed entry: "${work.title}"`);
-        works.push(work);
-      } else {
-        console.log('Failed to parse entry properly');
-      }
-    }
-    
-    console.log(`\nTotal entries parsed: ${works.length}`);
-    
-  } catch (error) {
-    console.error('Error parsing RSS feed:', error);
-  }
-  
-  return works;
 }
 
 function parseRSSEntry(entryXml, entryIndex) {
