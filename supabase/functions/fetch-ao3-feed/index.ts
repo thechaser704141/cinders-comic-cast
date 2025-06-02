@@ -275,6 +275,9 @@ function parseWorksFromHTML(html) {
 function parseWorkFromBlurb(workHtml, matchId) {
   console.log(`Parsing work blurb for match ID: ${matchId}`);
   
+  // Log the first 500 characters of the work HTML for debugging
+  console.log(`Work HTML sample: ${workHtml.substring(0, 500)}...`);
+  
   // Extract title and link - more flexible pattern
   const titlePattern = /<h4[^>]*class="[^"]*heading[^"]*"[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([^<]+)<\/a>/i;
   const titleMatch = workHtml.match(titlePattern);
@@ -303,6 +306,10 @@ function parseWorkFromBlurb(workHtml, matchId) {
   const summaryPattern = /<blockquote[^>]*class="userstuff summary"[^>]*>([\s\S]*?)<\/blockquote>/i;
   const summaryMatch = workHtml.match(summaryPattern);
   
+  console.log(`Looking for description with pattern: ${summaryPattern}`);
+  console.log(`Description search in HTML: ${workHtml.includes('blockquote') ? 'Found blockquote' : 'No blockquote found'}`);
+  console.log(`Summary class search: ${workHtml.includes('summary') ? 'Found summary class' : 'No summary class found'}`);
+  
   if (summaryMatch) {
     description = summaryMatch[1]
       .replace(/<p[^>]*>/gi, '')
@@ -318,6 +325,8 @@ function parseWorkFromBlurb(workHtml, matchId) {
     }
     
     console.log(`Found description: ${description}`);
+  } else {
+    console.log('No description found - pattern did not match');
   }
   
   // Extract tags using the exact pattern you provided
@@ -325,8 +334,13 @@ function parseWorkFromBlurb(workHtml, matchId) {
   const tagsPattern = /<ul[^>]*class="tags commas"[^>]*>([\s\S]*?)<\/ul>/i;
   const tagsMatch = workHtml.match(tagsPattern);
   
+  console.log(`Looking for tags with pattern: ${tagsPattern}`);
+  console.log(`Tags search in HTML: ${workHtml.includes('tags commas') ? 'Found tags commas class' : 'No tags commas class found'}`);
+  
   if (tagsMatch) {
     const tagsHtml = tagsMatch[1];
+    console.log(`Found tags HTML: ${tagsHtml.substring(0, 200)}...`);
+    
     // Extract individual tag links
     const tagPattern = /<a[^>]*class="tag"[^>]*>([^<]+)<\/a>/gi;
     let tagMatch;
@@ -340,6 +354,8 @@ function parseWorkFromBlurb(workHtml, matchId) {
         tags.push(tag);
       }
     }
+  } else {
+    console.log('No tags found - pattern did not match');
   }
   
   console.log(`Found ${tags.length} tags: ${tags.slice(0, 5).join(', ')}${tags.length > 5 ? '...' : ''}`);
@@ -382,8 +398,13 @@ function parseWorkFromBlurb(workHtml, matchId) {
   const datePattern = /<p[^>]*class="datetime"[^>]*>([\s\S]*?)<\/p>/i;
   const dateMatch = workHtml.match(datePattern);
   
+  console.log(`Looking for date with pattern: ${datePattern}`);
+  console.log(`Date search in HTML: ${workHtml.includes('datetime') ? 'Found datetime class' : 'No datetime class found'}`);
+  
   if (dateMatch) {
     const dateHtml = dateMatch[1];
+    console.log(`Found datetime HTML: ${dateHtml}`);
+    
     // Look for datetime attribute in the datetime HTML
     const datetimePattern = /datetime="([^"]+)"/i;
     const datetimeMatch = dateHtml.match(datetimePattern);
@@ -395,7 +416,11 @@ function parseWorkFromBlurb(workHtml, matchId) {
         published_date = parsedDate.toISOString();
         console.log(`Found date: ${published_date}`);
       }
+    } else {
+      console.log('No datetime attribute found in datetime HTML');
     }
+  } else {
+    console.log('No date found - datetime pattern did not match');
   }
   
   // Fallback to current date if no date found
