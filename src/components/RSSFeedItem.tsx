@@ -48,6 +48,11 @@ export const RSSFeedItem = ({ item }: RSSFeedItemProps) => {
     ));
   };
 
+  // Filter out the fandom tag
+  const filteredTags = item.tags ? item.tags.filter(tag => 
+    tag !== "Cinderella Boy - Punko (Webcomic)"
+  ) : [];
+
   return (
     <Card className="hover:shadow-lg transition-shadow duration-200">
       <CardHeader>
@@ -88,18 +93,13 @@ export const RSSFeedItem = ({ item }: RSSFeedItemProps) => {
       </CardHeader>
       
       <CardContent>
-        {item.tags && item.tags.length > 0 && (
+        {filteredTags && filteredTags.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-4">
-            {item.tags.slice(0, 8).map((tag, index) => (
-              <Badge key={index} variant="secondary" className="text-xs">
+            {filteredTags.map((tag, index) => (
+              <Badge key={index} variant="secondary" className="text-xs px-2 py-1">
                 {tag}
               </Badge>
             ))}
-            {item.tags.length > 8 && (
-              <Badge variant="outline" className="text-xs">
-                +{item.tags.length - 8} more
-              </Badge>
-            )}
           </div>
         )}
         
