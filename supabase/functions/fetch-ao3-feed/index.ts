@@ -192,16 +192,20 @@ function parseRSSEntry(entryXml, entryIndex) {
   if (rawContent) {
     console.log('Raw content preview:', rawContent.substring(0, 500));
     
-    // Extract categories - these are relationship types like M/M, F/F, etc.
-    const categoryRegex = /<a[^>]*class="tag"[^>]*>([^<]*(?:\/[^<]*)+)<\/a>/gi;
-    let categoryMatch;
-    
-    while ((categoryMatch = categoryRegex.exec(rawContent)) !== null) {
-      const category = cleanText(categoryMatch[1]);
-      // Categories are typically relationship patterns like M/M, F/F, Gen, etc.
-      if (category && category.match(/^(M\/M|F\/F|F\/M|Gen|Multi|Other)$/i)) {
-        categories.push(category);
-        console.log(`Found category: ${category}`);
+    // Extract categories from the specific HTML structure
+    // Look for "Categories:" followed by links with patterns like F/F, M/M
+    const categoryListMatch = rawContent.match(/Categories:[^<]*(<a[^>]*class="tag"[^>]*>[^<]+<\/a>(?:\s*,\s*<a[^>]*class="tag"[^>]*>[^<]+<\/a>)*)/i);
+    if (categoryListMatch) {
+      const categoryHtml = categoryListMatch[1];
+      const categoryRegex = /<a[^>]*class="tag"[^>]*>([^<]+)<\/a>/gi;
+      let categoryMatch;
+      
+      while ((categoryMatch = categoryRegex.exec(categoryHtml)) !== null) {
+        const category = cleanText(categoryMatch[1]);
+        if (category && category.match(/^(M\/M|F\/F|F\/M|Gen|Multi|Other)$/i)) {
+          categories.push(category);
+          console.log(`Found category: ${category}`);
+        }
       }
     }
     
@@ -293,6 +297,42 @@ function parseRSSEntry(entryXml, entryIndex) {
   return result;
 }
 
+// Parse RSS/Atom feed entries
+function parseRSSEntries(feedContent) {
+  console.log('=== PARSING RSS/ATOM FEED ===');
+  console.log('Feed content length:', feedContent.length);
+  
+  const works = [];
+  
+  try {
+    // Look for entries (Atom format) or items (RSS format)
+    const entryRegex = /<entry[^>]*>([\s\S]*?)<\/entry>/gi;
+    let match;
+    let entryCount = 0;
+    
+    while ((match = entryRegex.exec(feedContent)) !== null && entryCount < 50) {
+      entryCount++;
+      console.log(`\n=== PARSING ENTRY ${entryCount} ===`);
+      const entryXml = match[1];
+      
+      const work = parseRSSEntry(entryXml, entryCount);
+      if (work && work.title && work.link) {
+        console.log(`Successfully parsed entry: "${work.title}"`);
+        works.push(work);
+      } else {
+        console.log('Failed to parse entry properly');
+      }
+    }
+    
+    console.log(`\nTotal entries parsed: ${works.length}`);
+    
+  } catch (error) {
+    console.error('Error parsing RSS feed:', error);
+  }
+  
+  return works;
+}
+
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -362,7 +402,17 @@ serve(async (req) => {
       // Parse works from RSS feed
       works = parseRSSEntries(feedContent);
       
-      console.log(`Found ${works.length} works in RSS feed`);
+      // Filter out explicit content
+      const filteredWorks = works.filter(work => {
+        if (work.rating && work.rating.toLowerCase().includes('explicit')) {
+          console.log(`Filtering out explicit work: ${work.title}`);
+          return false;
+        }
+        return true;
+      });
+      
+      console.log(`Found ${works.length} works in RSS feed, ${filteredWorks.length} after filtering explicit content`);
+      works = filteredWorks;
       
     } catch (error) {
       console.error(`Error fetching RSS feed:`, error);
@@ -402,6 +452,7 @@ serve(async (req) => {
           author: work.author,
           published_date: work.published_date,
           tags: work.tags,
+          categories: work.categories,
           word_count: work.word_count,
           chapters: work.chapters,
           fandom: work.fandom,
