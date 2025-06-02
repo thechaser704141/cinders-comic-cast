@@ -249,8 +249,8 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
     )
 
-    // Use the RSS feed URL instead of HTML scraping
-    const feedUrl = 'https://archiveofourown.org/tags/Cinderella%20Boy%20-%20Punko%20%28Webcomic%29/feed.atom';
+    // Use the correct RSS feed URL with tag ID instead of tag name
+    const feedUrl = 'https://archiveofourown.org/tags/104741227/feed.atom';
     
     console.log('Starting AO3 RSS feed parsing...');
     console.log('Feed URL:', feedUrl);
