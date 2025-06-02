@@ -153,12 +153,14 @@ function parseRSSEntry(entryXml, entryIndex) {
   let rating = null;
   let tags = [];
   let categories = [];
+  let characters = [];
+  let relationships = [];
+  let additional_tags = [];
   
   if (rawContent) {
     console.log('Raw content preview:', rawContent.substring(0, 500));
     
     // Extract categories from the specific HTML structure
-    // Look for "Categories:" followed by links with patterns like F/F, M/M
     const categoryListMatch = rawContent.match(/Categories:[^<]*(<a[^>]*class="tag"[^>]*>[^<]+<\/a>(?:\s*,\s*<a[^>]*class="tag"[^>]*>[^<]+<\/a>)*)/i);
     if (categoryListMatch) {
       const categoryHtml = categoryListMatch[1];
@@ -174,7 +176,7 @@ function parseRSSEntry(entryXml, entryIndex) {
       }
     }
     
-    // Extract all other tags from the HTML structure - look for all <a> tags with class="tag"
+    // Extract all tags from the HTML structure - look for all <a> tags with class="tag"
     const tagRegex = /<a[^>]*class="tag"[^>]*>([^<]+)<\/a>/gi;
     let tagMatch;
     
@@ -188,6 +190,31 @@ function parseRSSEntry(entryXml, entryIndex) {
         } else {
           console.log(`Skipped metadata tag: ${tag}`);
         }
+      }
+    }
+    
+    // Categorize tags into characters, relationships, and additional tags
+    for (const tag of tags) {
+      // Skip the fandom tag as it's redundant
+      if (tag === "Cinderella Boy - Punko (Webcomic)") {
+        continue;
+      }
+      
+      // Relationships typically have "/" or "&" in them
+      if (tag.includes('/') || tag.includes(' & ')) {
+        relationships.push(tag);
+        console.log(`Categorized as relationship: ${tag}`);
+      }
+      // Character tags often end with (Cinderella Boy) or are character names
+      else if (tag.includes('(Cinderella Boy)') || 
+               tag.match(/^(Chase|Buddy|Deacon|Silver|Bronze|Goldie|Violet|Prunella|Ralph|Beth|Dale)(\s|$)/)) {
+        characters.push(tag);
+        console.log(`Categorized as character: ${tag}`);
+      }
+      // Everything else goes to additional tags
+      else {
+        additional_tags.push(tag);
+        console.log(`Categorized as additional tag: ${tag}`);
       }
     }
     
@@ -241,8 +268,9 @@ function parseRSSEntry(entryXml, entryIndex) {
   console.log(`Chapters: ${chapters}`);
   console.log(`Rating: ${rating}`);
   console.log(`Categories: ${categories.join(', ')}`);
-  console.log(`Total story tags found: ${tags.length}`);
-  console.log(`Story tags: ${tags.join(', ')}`);
+  console.log(`Characters (${characters.length}): ${characters.join(', ')}`);
+  console.log(`Relationships (${relationships.length}): ${relationships.join(', ')}`);
+  console.log(`Additional tags (${additional_tags.length}): ${additional_tags.join(', ')}`);
   
   const result = {
     title,
@@ -252,6 +280,9 @@ function parseRSSEntry(entryXml, entryIndex) {
     published_date,
     tags: tags.length > 0 ? tags : null,
     categories: categories.length > 0 ? categories : null,
+    characters: characters.length > 0 ? characters : null,
+    relationships: relationships.length > 0 ? relationships : null,
+    additional_tags: additional_tags.length > 0 ? additional_tags : null,
     word_count,
     chapters,
     fandom: 'Cinderella Boy - Punko (Webcomic)',

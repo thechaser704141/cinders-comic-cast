@@ -41,9 +41,11 @@ export type Database = {
       }
       rss_items: {
         Row: {
+          additional_tags: string[] | null
           author: string | null
           categories: string[] | null
           chapters: string | null
+          characters: string[] | null
           created_at: string
           description: string | null
           fandom: string | null
@@ -51,15 +53,18 @@ export type Database = {
           link: string
           published_date: string | null
           rating: string | null
+          relationships: string[] | null
           tags: string[] | null
           title: string
           updated_at: string
           word_count: number | null
         }
         Insert: {
+          additional_tags?: string[] | null
           author?: string | null
           categories?: string[] | null
           chapters?: string | null
+          characters?: string[] | null
           created_at?: string
           description?: string | null
           fandom?: string | null
@@ -67,15 +72,18 @@ export type Database = {
           link: string
           published_date?: string | null
           rating?: string | null
+          relationships?: string[] | null
           tags?: string[] | null
           title: string
           updated_at?: string
           word_count?: number | null
         }
         Update: {
+          additional_tags?: string[] | null
           author?: string | null
           categories?: string[] | null
           chapters?: string | null
+          characters?: string[] | null
           created_at?: string
           description?: string | null
           fandom?: string | null
@@ -83,6 +91,7 @@ export type Database = {
           link?: string
           published_date?: string | null
           rating?: string | null
+          relationships?: string[] | null
           tags?: string[] | null
           title?: string
           updated_at?: string

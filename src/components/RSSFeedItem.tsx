@@ -1,7 +1,7 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ExternalLink, User, Calendar, BookOpen, Star } from "lucide-react";
+import { ExternalLink, User, Calendar, BookOpen, Star, Users, Heart, Tag } from "lucide-react";
 
 interface RSSFeedItemProps {
   item: {
@@ -13,6 +13,9 @@ interface RSSFeedItemProps {
     published_date?: string;
     tags?: string[];
     categories?: string[];
+    characters?: string[];
+    relationships?: string[];
+    additional_tags?: string[];
     word_count?: number;
     chapters?: string;
     rating?: string;
@@ -49,10 +52,33 @@ export const RSSFeedItem = ({ item }: RSSFeedItemProps) => {
     ));
   };
 
-  // Filter out the fandom tag
-  const filteredTags = item.tags ? item.tags.filter(tag => 
-    tag !== "Cinderella Boy - Punko (Webcomic)"
-  ) : [];
+  const renderTagSection = (tags: string[] | undefined, title: string, icon: React.ReactNode, limit: number = 4) => {
+    if (!tags || tags.length === 0) return null;
+    
+    const displayedTags = tags.slice(0, limit);
+    const remainingCount = tags.length - limit;
+    
+    return (
+      <div className="mb-3">
+        <div className="flex items-center gap-1 mb-2">
+          {icon}
+          <span className="text-sm font-medium text-gray-600">{title}:</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {displayedTags.map((tag, index) => (
+            <Badge key={index} variant="secondary" className="text-xs px-2 py-1">
+              {tag}
+            </Badge>
+          ))}
+          {remainingCount > 0 && (
+            <Badge variant="outline" className="text-xs px-2 py-1 text-gray-500">
+              +{remainingCount} more
+            </Badge>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <Card className="hover:shadow-lg transition-shadow duration-200">
@@ -103,23 +129,13 @@ export const RSSFeedItem = ({ item }: RSSFeedItemProps) => {
       </CardHeader>
       
       <CardContent>
-        {filteredTags && filteredTags.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-4">
-            {filteredTags.map((tag, index) => (
-              <Badge key={index} variant="secondary" className="text-xs px-2 py-1">
-                {tag}
-              </Badge>
-            ))}
-          </div>
-        )}
-        
         {item.description && (
           <div className="text-gray-700 mb-4">
             {formatDescription(item.description)}
           </div>
         )}
         
-        <div className="flex flex-wrap gap-4 text-sm text-gray-600">
+        <div className="flex flex-wrap gap-4 text-sm text-gray-600 mb-4">
           {item.word_count && (
             <div className="flex items-center gap-1">
               <BookOpen className="h-4 w-4" />
@@ -131,6 +147,30 @@ export const RSSFeedItem = ({ item }: RSSFeedItemProps) => {
             <div className="flex items-center gap-1">
               <span>{item.chapters} chapters</span>
             </div>
+          )}
+        </div>
+
+        {/* Categorized Tags */}
+        <div className="space-y-3">
+          {renderTagSection(
+            item.characters, 
+            "Characters", 
+            <Users className="h-4 w-4" />, 
+            4
+          )}
+          
+          {renderTagSection(
+            item.relationships, 
+            "Relationships", 
+            <Heart className="h-4 w-4" />, 
+            4
+          )}
+          
+          {renderTagSection(
+            item.additional_tags, 
+            "Additional Tags", 
+            <Tag className="h-4 w-4" />, 
+            4
           )}
         </div>
       </CardContent>
